@@ -1,4 +1,4 @@
-type Name = str;
+type Name = String;
 
 pub enum Expression {
     CInt(i32),

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ir::ast::Expression;
-//use crate::ir::ast::Statement;
+use crate::ir::ast::Statement;
 
 type Environment = HashMap<String, i32>;
 
@@ -14,8 +14,37 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<i32, String> {
 	Expression::Div(lhs, rhs) => Ok(eval(*lhs, env)? / eval(*rhs, env)?),
 	Expression::Var(name) => match env.get(&name) {
 	    Some(value) => Ok(*value),
-	    None           => Err(String::from("Variable {name} not found"))  	
+	    None        => Err(String::from("Variable {name} not found"))  	
 	}
+    }
+}
+
+pub fn execute(stmt: Statement, env: & mut Environment) -> Result<&Environment, String> {
+    match stmt {
+	Statement::Assignment(name, exp) => {
+	    let value = eval(*exp, &env)?;
+	    env.insert(*name, value);
+	    Ok(env)
+	},
+	Statement::IfThenElse(cond, stmt_then, stmt_else) => {
+	    let value = eval(*cond, &env)?;
+	    if value > 0 {
+		execute(*stmt_then, env)
+	    }
+	    else {
+		execute(*stmt_else, env)
+	    }
+	},
+	// Statement::While(cond, stmt) => {
+	//     let mut value = eval(*cond, &env)?;
+	//     let mut new_env = env.clone();
+	//     while value > 0 {
+	// 	new_env = execute(*stmt, &mut new_env)?.clone();
+	// 	value = eval(*cond, &env)?;
+	//     }
+	//     Ok(&new_env)
+	// }
+	_ => Err(String::from("not implemented yet"))
     }
 }
 
@@ -72,7 +101,10 @@ mod tests {
 	assert_eq!(eval(v1, &env), Ok(10));
 	assert_eq!(eval(v2, &env), Ok(20));
     }
+    
     // TODO: Write more unit tests here.
+    //  (a) variable not found
+    //  ...
 }
 
 
