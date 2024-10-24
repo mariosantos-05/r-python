@@ -94,7 +94,6 @@ mod tests {
         let env = HashMap::from([(String::from("x"), 10), (String::from("y"), 20)]);
         let v1 = Expression::Var(String::from("x"));
         let v2 = Expression::Var(String::from("y"));
-
         assert_eq!(eval(&v1, &env), Ok(10));
         assert_eq!(eval(&v2, &env), Ok(20));
     }
@@ -155,7 +154,6 @@ mod tests {
                 Box::new(Expression::CInt(2)),
             )),
         );
-
         assert_eq!(eval(&expr, &env), Ok(25));
     }
 
@@ -172,7 +170,6 @@ mod tests {
                 Box::new(Expression::CInt(4)),
             )),
         );
-
         assert_eq!(eval(&expr, &env), Ok(12));
     }
 
@@ -186,8 +183,4 @@ mod tests {
             Err(String::from("Variable z not found"))
         );
     }
-
-    // TODO: Write more unit tests here.
-    //  (a) variable not found
-    //  ...
 }
