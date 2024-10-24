@@ -5,43 +5,42 @@ use crate::ir::ast::Statement;
 
 type Environment = HashMap<String, i32>;
 
-pub fn eval(exp: Expression, env: &Environment) -> Result<i32, String> {
+pub fn eval(exp: &Expression, env: &Environment) -> Result<i32, String> {
     match exp {
-        Expression::CInt(v) => Ok(v),
-        Expression::Add(lhs, rhs) => Ok(eval(*lhs, env)? + eval(*rhs, env)?),
-        Expression::Sub(lhs, rhs) => Ok(eval(*lhs, env)? - eval(*rhs, env)?),
-        Expression::Mul(lhs, rhs) => Ok(eval(*lhs, env)? * eval(*rhs, env)?),
-        Expression::Div(lhs, rhs) => Ok(eval(*lhs, env)? / eval(*rhs, env)?),
-        Expression::Var(name) => match env.get(&name) {
-            Some(value) => Ok(*value),
+        Expression::CInt(v) => Ok(*v),
+        Expression::Add(lhs, rhs) => Ok(eval(lhs, env)? + eval(rhs, env)?),
+        Expression::Sub(lhs, rhs) => Ok(eval(lhs, env)? - eval(rhs, env)?),
+        Expression::Mul(lhs, rhs) => Ok(eval(lhs, env)? * eval(rhs, env)?),
+        Expression::Div(lhs, rhs) => Ok(eval(lhs, env)? / eval(rhs, env)?),
+        Expression::Var(name) => match env.get(name) {
+            Some(&value) => Ok(value),
             None => Err(String::from("Variable {name} not found")),
         },
     }
 }
 
-pub fn execute(stmt: Statement, env: &mut Environment) -> Result<&Environment, String> {
+pub fn execute<'a>(stmt: &Statement, env: &'a mut Environment) -> Result<&'a Environment, String> {
     match stmt {
         Statement::Assignment(name, exp) => {
-            let value = eval(*exp, &env)?;
-            env.insert(*name, value);
+            let value = eval(exp, env)?;
+            env.insert(*name.clone(), value);
             Ok(env)
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
-            let value = eval(*cond, &env)?;
+            let value = eval(cond, env)?;
             if value > 0 {
-                execute(*stmt_then, env)
+                execute(stmt_then, env)
             } else {
-                execute(*stmt_else, env)
+                execute(stmt_else, env)
             }
         }
         Statement::While(cond, stmt) => {
-            let mut value = eval(*cond, &env)?;
-            let mut new_env = env.clone();
+            let mut value = eval(cond, env)?;
             while value > 0 {
-                new_env = execute(*stmt, &mut new_env)?.clone();
-                value = eval(*cond, &env)?;
+                execute(stmt, env)?;
+                value = eval(cond, env)?;
             }
-            Ok(&new_env)
+            Ok(env)
         }
         _ => Err(String::from("not implemented yet")),
     }
@@ -58,8 +57,8 @@ mod tests {
         let c10 = Expression::CInt(10);
         let c20 = Expression::CInt(20);
 
-        assert_eq!(eval(c10, &env), Ok(10));
-        assert_eq!(eval(c20, &env), Ok(20));
+        assert_eq!(eval(&c10, &env), Ok(10));
+        assert_eq!(eval(&c20, &env), Ok(20));
     }
 
     #[test]
@@ -68,7 +67,7 @@ mod tests {
         let c10 = Expression::CInt(10);
         let c20 = Expression::CInt(20);
         let add1 = Expression::Add(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(add1, &env), Ok(30));
+        assert_eq!(eval(&add1, &env), Ok(30));
     }
 
     #[test]
@@ -79,7 +78,7 @@ mod tests {
         let c30 = Expression::CInt(30);
         let add1 = Expression::Add(Box::new(c10), Box::new(c20));
         let add2 = Expression::Add(Box::new(add1), Box::new(c30));
-        assert_eq!(eval(add2, &env), Ok(60));
+        assert_eq!(eval(&add2, &env), Ok(60));
     }
 
     #[test]
@@ -88,7 +87,7 @@ mod tests {
         let c10 = Expression::CInt(10);
         let c20 = Expression::CInt(20);
         let mul1 = Expression::Mul(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(mul1, &env), Ok(200));
+        assert_eq!(eval(&mul1, &env), Ok(200));
     }
 
     #[test]
@@ -97,8 +96,8 @@ mod tests {
         let v1 = Expression::Var(String::from("x"));
         let v2 = Expression::Var(String::from("y"));
 
-        assert_eq!(eval(v1, &env), Ok(10));
-        assert_eq!(eval(v2, &env), Ok(20));
+        assert_eq!(eval(&v1, &env), Ok(10));
+        assert_eq!(eval(&v2, &env), Ok(20));
     }
 
     // TODO: Write more unit tests here.
