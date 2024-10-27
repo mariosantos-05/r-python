@@ -2,8 +2,8 @@
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
 
-pub mod ir; 
 pub mod interpreter;
+pub mod ir;
 
 fn main() {
     println!("Hello, world!");

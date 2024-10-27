@@ -138,10 +138,8 @@ mod tests {
     #[test]
     fn execute_assignment() {
         let mut env = HashMap::new();
-        let assign_stmt = Statement::Assignment(
-            Box::from(String::from("x")),
-            Box::new(Expression::CInt(42)),
-        );
+        let assign_stmt =
+            Statement::Assignment(Box::from(String::from("x")), Box::new(Expression::CInt(42)));
 
         execute(&assign_stmt, &mut env).unwrap();
         assert_eq!(env.get("x"), Some(&42));
@@ -149,10 +147,7 @@ mod tests {
 
     #[test]
     fn eval_expression_with_variables() {
-        let env = HashMap::from([
-            (String::from("a"), 5),
-            (String::from("b"), 3),
-        ]);
+        let env = HashMap::from([(String::from("a"), 5), (String::from("b"), 3)]);
         let expr = Expression::Mul(
             Box::new(Expression::Var(String::from("a"))),
             Box::new(Expression::Add(
@@ -195,5 +190,4 @@ mod tests {
     // TODO: Write more unit tests here.
     //  (a) variable not found
     //  ...
-
 }
