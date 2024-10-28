@@ -1,4 +1,4 @@
-type Name = String;
+pub type Name = String;
 
 pub enum Expression {
     CInt(i32),
