@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ir::ast::Expression;
-use crate::ir::ast::Statement;
 use crate::ir::ast::Name;
+use crate::ir::ast::Statement;
 
 type IntValue = i32;
 type ErrorMessage = String;
@@ -23,7 +23,10 @@ pub fn eval(exp: &Expression, env: &Environment) -> Result<IntValue, ErrorMessag
     }
 }
 
-pub fn execute<'a>(stmt: &Statement, env: &'a mut Environment) -> Result<&'a Environment, ErrorMessage> {
+pub fn execute<'a>(
+    stmt: &Statement,
+    env: &'a mut Environment,
+) -> Result<&'a Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
             let value = eval(exp, env)?;
@@ -98,10 +101,6 @@ mod tests {
         let env = HashMap::from([(String::from("x"), 10), (String::from("y"), 20)]);
         let v1 = Expression::Var(String::from("x"));
         let v2 = Expression::Var(String::from("y"));
-<<<<<<< HEAD
-=======
-
->>>>>>> 93840c0 (get while arm to compile)
         assert_eq!(eval(&v1, &env), Ok(10));
         assert_eq!(eval(&v2, &env), Ok(20));
     }
