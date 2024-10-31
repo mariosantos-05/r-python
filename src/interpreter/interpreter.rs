@@ -23,18 +23,16 @@ pub fn eval(exp: &Expression, env: &Environment) -> Result<IntValue, ErrorMessag
     }
 }
 
-pub fn execute<'a>(
-    stmt: &Statement,
-    env: &'a mut Environment,
-) -> Result<&'a Environment, ErrorMessage> {
+pub fn execute(stmt: &Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
-            let value = eval(exp, env)?;
-            env.insert(*name.clone(), value);
-            Ok(env)
+            let value = eval(exp, &env)?;
+            let mut new_env = env;
+            new_env.insert(*name.clone(), value);
+            Ok(new_env.clone())
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
-            let value = eval(cond, env)?;
+            let value = eval(cond, &env)?;
             if value > 0 {
                 execute(stmt_then, env)
             } else {
@@ -42,12 +40,18 @@ pub fn execute<'a>(
             }
         }
         Statement::While(cond, stmt) => {
-            let mut value = eval(cond, env)?;
+            let mut value = eval(cond, &env)?;
+            let mut new_env = env;
             while value > 0 {
-                let env = execute(stmt, env)?;
-                value = eval(cond, env)?;
+                new_env = execute(stmt, new_env.clone())?;
+                value = eval(cond, &new_env.clone())?;
             }
-            Ok(env)
+            Ok(new_env)
+        }
+        Statement::Sequence(s1, s2) => {
+            let new_env1 = execute(s1, env)?;
+            let new_env2 = execute(s2, new_env1)?;
+            Ok(new_env2)
         }
         _ => Err(String::from("not implemented yet")),
     }
@@ -143,12 +147,14 @@ mod tests {
 
     #[test]
     fn execute_assignment() {
-        let mut env = HashMap::new();
+        let env = HashMap::new();
         let assign_stmt =
             Statement::Assignment(Box::from(String::from("x")), Box::new(Expression::CInt(42)));
 
-        execute(&assign_stmt, &mut env).unwrap();
-        assert_eq!(env.get("x"), Some(&42));
+        match execute(&assign_stmt, env) {
+            Ok(new_env) => assert_eq!(new_env.get("x"), Some(&42)),
+            Err(s) => assert!(false, "{}", s),
+        }
     }
 
     #[test]
@@ -189,5 +195,55 @@ mod tests {
             eval(&var_expr, &env),
             Err(String::from("Variable z not found"))
         );
+    }
+
+    #[test]
+    fn eval_summation() {
+        /*
+         * (a test case for the following program)
+         *
+         * > x = 10
+         * > y = 0
+         * > while x:
+         * >   y = y + x
+         * >   x = x - 1
+         *
+         * Afeter executing this program, 'x' must be zero and
+         * 'y' must be 55.
+         */
+        let env = HashMap::new();
+
+        let a1 = Statement::Assignment(Box::new(String::from("x")), Box::new(Expression::CInt(10)));
+        let a2 = Statement::Assignment(Box::new(String::from("y")), Box::new(Expression::CInt(0)));
+        let a3 = Statement::Assignment(
+            Box::new(String::from("y")),
+            Box::new(Expression::Add(
+                Box::new(Expression::Var(String::from("y"))),
+                Box::new(Expression::Var(String::from("x"))),
+            )),
+        );
+        let a4 = Statement::Assignment(
+            Box::new(String::from("x")),
+            Box::new(Expression::Sub(
+                Box::new(Expression::Var(String::from("x"))),
+                Box::new(Expression::CInt(1)),
+            )),
+        );
+
+        let seq1 = Statement::Sequence(Box::new(a3), Box::new(a4));
+
+        let while_statement =
+            Statement::While(Box::new(Expression::Var(String::from("x"))), Box::new(seq1));
+
+        let seq2 = Statement::Sequence(Box::new(a2), Box::new(while_statement));
+        let program = Statement::Sequence(Box::new(a1), Box::new(seq2));
+
+        match execute(&program, env) {
+            Ok(new_env) => {
+                assert_eq!(new_env.get("y"), Some(&55));
+                assert_eq!(new_env.get("x"), Some(&0));
+            }
+            Err(s) => assert!(false, "{}", s),
+        }
     }
 }
