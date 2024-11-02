@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  build:
+  lint-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,15 +21,11 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Build project
-        run: cargo build --verbose
+      - name: Check for Compilation Errors
+        run: cargo check --verbose
 
-      - name: Check and Apply Code Formatting
-        run: |
-          cargo fmt -- --check || (
-            echo "Applying cargo fmt to correct formatting issues"
-            cargo fmt
-          )
+      - name: Check Code Formatting
+        run: cargo fmt -- --check
 
       - name: Run tests
         run: cargo test --verbose
