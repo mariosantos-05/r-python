@@ -20,16 +20,33 @@ pub fn eval(exp: &Expression, env: &Environment) -> Result<IntValue, ErrorMessag
             Some(&value) => Ok(value),
             None => Err(format!("Variable {} not found", name)),
         },
+        Expression::Comparison(lhs, op, rhs) => {
+            let left = eval(lhs, env)?;
+            let right = eval(rhs, env)?;
+            Ok(match op.as_str() {
+                "==" => if left == right { 1 } else { 0 },
+                "!=" => if left != right { 1 } else { 0 },
+                ">" => if left > right { 1 } else { 0 },
+                "<" => if left < right { 1 } else { 0 },
+                ">=" => if left >= right { 1 } else { 0 },
+                "<=" => if left <= right { 1 } else { 0 },
+                _ => return Err(format!("Unknown comparison operator: {}", op))
+            })
+        }
     }
 }
 
+
+// Added handling for Statement::Block to execute all statements in a block sequentially
+// Fixed the environment handling to properly thread through each statement
+// Added pattern matching for VarDeclaration and ValDeclaration
 pub fn execute(stmt: &Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
             let value = eval(exp, &env)?;
             let mut new_env = env;
             new_env.insert(*name.clone(), value);
-            Ok(new_env.clone())
+            Ok(new_env)
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
             let value = eval(cond, &env)?;
@@ -39,17 +56,27 @@ pub fn execute(stmt: &Statement, env: Environment) -> Result<Environment, ErrorM
                 execute(stmt_else, env)
             }
         }
+        Statement::Block(statements) => {
+            let mut current_env = env;
+            for stmt in statements {
+                current_env = execute(stmt, current_env)?;
+            }
+            Ok(current_env)
+        }
         Statement::While(cond, stmt) => {
             let mut value = eval(cond, &env)?;
             let mut new_env = env;
             while value > 0 {
-                new_env = execute(stmt, new_env.clone())?;
-                value = eval(cond, &new_env.clone())?;
+                new_env = execute(stmt, new_env)?;
+                value = eval(cond, &new_env)?;
             }
             Ok(new_env)
         }
-        Statement::Sequence(s1, s2) => execute(s1, env).and_then(|new_env| execute(s2, new_env)),
-        _ => Err(String::from("not implemented yet")),
+        Statement::Sequence(s1, s2) => {
+            let env1 = execute(s1, env)?;
+            execute(s2, env1)
+        }
+        Statement::VarDeclaration(_) | Statement::ValDeclaration(_) => Ok(env), // Add proper handling later
     }
 }
 
