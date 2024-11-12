@@ -1,5 +1,14 @@
 pub type Name = String;
 
+pub enum Type {
+    TInteger,
+    TBool,
+    TReal,
+    TString,
+    TList(Box<Type>),
+    TTuple(Vec<Type>),
+}
+
 pub enum Expression {
     CInt(i32),
     Var(String),
