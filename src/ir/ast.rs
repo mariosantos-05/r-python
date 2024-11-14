@@ -16,4 +16,5 @@ pub enum Statement {
     IfThenElse(Box<Expression>, Box<Statement>, Box<Statement>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
+    Casting(Box<Name>, Box<Expression>),
 }
