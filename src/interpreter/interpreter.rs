@@ -24,18 +24,53 @@ pub fn eval(exp: &Expression, env: &Environment) -> Result<IntValue, ErrorMessag
             let left = eval(lhs, env)?;
             let right = eval(rhs, env)?;
             Ok(match op.as_str() {
-                "==" => if left == right { 1 } else { 0 },
-                "!=" => if left != right { 1 } else { 0 },
-                ">" => if left > right { 1 } else { 0 },
-                "<" => if left < right { 1 } else { 0 },
-                ">=" => if left >= right { 1 } else { 0 },
-                "<=" => if left <= right { 1 } else { 0 },
-                _ => return Err(format!("Unknown comparison operator: {}", op))
+                "==" => {
+                    if left == right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                "!=" => {
+                    if left != right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                ">" => {
+                    if left > right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                "<" => {
+                    if left < right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                ">=" => {
+                    if left >= right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                "<=" => {
+                    if left <= right {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                _ => return Err(format!("Unknown comparison operator: {}", op)),
             })
         }
     }
 }
-
 
 // Added handling for Statement::Block to execute all statements in a block sequentially
 // Fixed the environment handling to properly thread through each statement

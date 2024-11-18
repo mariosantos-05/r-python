@@ -10,7 +10,7 @@ pub enum Expression {
     Sub(Box<Expression>, Box<Expression>),
     Mul(Box<Expression>, Box<Expression>),
     Div(Box<Expression>, Box<Expression>),
-    Comparison(Box<Expression>, String, Box<Expression>), // Add this
+    Comparison(Box<Expression>, String, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub enum Statement {
     Assignment(Box<Name>, Box<Expression>),
     IfThenElse(Box<Expression>, Box<Statement>, Box<Statement>),
     While(Box<Expression>, Box<Statement>),
-    Block(Vec<Statement>),  // For indented blocks
+    Block(Vec<Statement>), // For indented blocks
     Sequence(Box<Statement>, Box<Statement>),
 }
 
@@ -33,14 +33,10 @@ pub enum ParseError {
 
 pub fn with_error_context<'a, T>(
     parser: impl Fn(&'a str) -> IResult<&'a str, T>,
-    _context: &'a str
+    _context: &'a str,
 ) -> impl Fn(&'a str) -> IResult<&'a str, T> {
     move |input| {
-        parser(input).map_err(|_| {
-            nom::Err::Error(nom::error::Error::new(
-                input,
-                nom::error::ErrorKind::Tag
-            ))
-        })
+        parser(input)
+            .map_err(|_| nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
     }
 }

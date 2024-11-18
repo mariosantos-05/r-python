@@ -1,8 +1,8 @@
 //use crate::ir::ast::Expression;
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
-use crate::parser::parser::parse;
 use crate::interpreter::interpreter::execute;
+use crate::parser::parser::parse;
 use std::collections::HashMap;
 
 pub mod interpreter;
@@ -12,23 +12,23 @@ pub mod parser;
 fn run_test(name: &str, program: &str) {
     println!("\n=== Running test: {} ===", name);
     println!("Program:\n{}\n", program);
-    
+
     match parse(program) {
         Ok((remaining, statements)) => {
             println!("Parsed AST: {:#?}\n", statements);
-            
+
             if !remaining.is_empty() {
                 println!("Warning: Unparsed input remains: {:?}\n", remaining);
                 return;
             }
-            
+
             let mut current_env = HashMap::new();
             for stmt in statements {
                 match execute(&stmt, current_env) {
                     Ok(new_env) => {
                         println!("Environment after execution: {:?}", new_env);
                         current_env = new_env;
-                    },
+                    }
                     Err(e) => {
                         println!("Execution error: {}", e);
                         return;
@@ -36,8 +36,8 @@ fn run_test(name: &str, program: &str) {
                 }
             }
             println!("\nFinal environment: {:?}", current_env);
-        },
-        Err(e) => println!("Parse error: {:?}", e)
+        }
+        Err(e) => println!("Parse error: {:?}", e),
     }
 }
 
