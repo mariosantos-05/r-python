@@ -4,7 +4,6 @@ use crate::ir::ast::Expression;
 use crate::ir::ast::Name;
 use crate::ir::ast::Statement;
 
-type IntValue = i32;
 type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
@@ -139,7 +138,7 @@ fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
         rhs,
         env,
         |a, b| {
-            if (a && b) {
+            if a && b {
                 Expression::CTrue
             } else {
                 Expression::CFalse
@@ -155,7 +154,7 @@ fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
         rhs,
         env,
         |a, b| {
-            if (a || b) {
+            if a || b {
                 Expression::CTrue
             } else {
                 Expression::CFalse
@@ -516,16 +515,15 @@ mod tests {
         );
         let a4 = Statement::Assignment(
             Box::new(String::from("x")),
-            Box::new(Sub(
-                Box::new(Var(String::from("x"))),
-                Box::new(CInt(1)),
-            )),
+            Box::new(Sub(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
         );
 
         let seq1 = Statement::Sequence(Box::new(a3), Box::new(a4));
 
-        let while_statement =
-            Statement::While(Box::new(GT(Box::new(Var(String::from("x"))), Box::new(CInt(0)))), Box::new(seq1));
+        let while_statement = Statement::While(
+            Box::new(GT(Box::new(Var(String::from("x"))), Box::new(CInt(0)))),
+            Box::new(seq1),
+        );
 
         let seq2 = Statement::Sequence(Box::new(a2), Box::new(while_statement));
         let program = Statement::Sequence(Box::new(a1), Box::new(seq2));
@@ -555,10 +553,8 @@ mod tests {
         let env = HashMap::new();
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
-        let then_stmt =
-            Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
-        let else_stmt =
-            Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let then_stmt = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
+        let else_stmt = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
 
         let if_statement = Statement::IfThenElse(
             Box::new(condition),
@@ -566,8 +562,7 @@ mod tests {
             Box::new(else_stmt),
         );
 
-        let setup_stmt =
-            Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
+        let setup_stmt = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
         let program = Statement::Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
         match execute(program, env) {
