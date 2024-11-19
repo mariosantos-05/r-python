@@ -92,18 +92,21 @@ fn check_bin_relational_expression(
 mod tests {
     use super::*;
 
+    use crate::ir::ast::Type::*;
+    use crate::ir::ast::Expression::*;
+
     #[test]
     fn check_tlist_comparison() {
-        let t_list1 = Type::TList(Box::new(Type::TInteger));
-        let t_list2 = Type::TList(Box::new(Type::TInteger));
+        let t_list1 = TList(Box::new(TInteger));
+        let t_list2 = TList(Box::new(TInteger));
 
         assert_eq!(t_list1, t_list2);
     }
 
     #[test]
     fn check_ttuple_comparison() {
-        let t_tuple1 = Type::TTuple(vec![Type::TInteger, Type::TBool]);
-        let t_tuple2 = Type::TTuple(vec![Type::TInteger, Type::TBool]);
+        let t_tuple1 = TTuple(vec![TInteger, TBool]);
+        let t_tuple2 = TTuple(vec![TInteger, TBool]);
 
         assert_eq!(t_tuple1, t_tuple2);
     }
@@ -111,37 +114,37 @@ mod tests {
     #[test]
     fn check_constant() {
         let env = HashMap::new();
-        let c10 = Expression::CInt(10);
-        assert_eq!(check(c10, &env), Ok(Type::TInteger));
+        let c10 = CInt(10);
+        assert_eq!(check(c10, &env), Ok(TInteger));
     }
 
     #[test]
     fn check_add_integers() {
         let env = HashMap::new();
-        let c10 = Expression::CInt(10);
-        let c20 = Expression::CInt(20);
-        let add = Expression::Add(Box::new(c10), Box::new(c20));
+        let c10 = CInt(10);
+        let c20 = CInt(20);
+        let add = Add(Box::new(c10), Box::new(c20));
 
-        assert_eq!(check(add, &env), Ok(Type::TInteger));
+        assert_eq!(check(add, &env), Ok(TInteger));
     }
 
     #[test]
     fn check_add_reals() {
         let env = HashMap::new();
-        let c10 = Expression::CReal(10.5);
-        let c20 = Expression::CReal(20.3);
-        let add = Expression::Add(Box::new(c10), Box::new(c20));
+        let c10 = CReal(10.5);
+        let c20 = CReal(20.3);
+        let add = Add(Box::new(c10), Box::new(c20));
 
-        assert_eq!(check(add, &env), Ok(Type::TReal));
+        assert_eq!(check(add, &env), Ok(TReal));
     }
 
     #[test]
     fn check_add_real_and_integer() {
         let env = HashMap::new();
-        let c10 = Expression::CInt(10);
-        let c20 = Expression::CReal(20.3);
-        let add = Expression::Add(Box::new(c10), Box::new(c20));
+        let c10 = CInt(10);
+        let c20 = CReal(20.3);
+        let add = Add(Box::new(c10), Box::new(c20));
 
-        assert_eq!(check(add, &env), Ok(Type::TReal));
+        assert_eq!(check(add, &env), Ok(TReal));
     }
 }
