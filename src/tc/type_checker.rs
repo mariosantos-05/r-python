@@ -100,15 +100,33 @@ mod tests {
         let t_list1 = TList(Box::new(TInteger));
         let t_list2 = TList(Box::new(TInteger));
 
-        assert_eq!(t_list1, t_list2);
+        assert_eq!(t_list1 == t_list2, true);
+    }
+
+    #[test]
+    fn check_tlist_comparison_different_types() {
+        let t_list1 = TList(Box::new(TInteger));
+        let t_list2 = TList(Box::new(TBool));
+        
+        assert_eq!(t_list1 == t_list2, false);
     }
 
     #[test]
     fn check_ttuple_comparison() {
         let t_tuple1 = TTuple(vec![TInteger, TBool]);
         let t_tuple2 = TTuple(vec![TInteger, TBool]);
+        
 
-        assert_eq!(t_tuple1, t_tuple2);
+        assert_eq!(t_tuple1 == t_tuple2, true);
+    }
+
+    #[test]
+    fn check_ttuple_comparison_different_types() {
+        let t_tuple1 = TTuple(vec![TInteger, TBool]);
+        let t_tuple2 = TTuple(vec![TBool, TInteger]);
+        
+
+        assert_eq!(t_tuple1 == t_tuple2, false);
     }
 
     #[test]
@@ -143,6 +161,16 @@ mod tests {
         let env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CReal(20.3);
+        let add = Add(Box::new(c10), Box::new(c20));
+
+        assert_eq!(check(add, &env), Ok(TReal));
+    }
+
+    #[test]
+    fn check_add_integer_and_real() {
+        let env = HashMap::new();
+        let c10 = CReal(10.5);
+        let c20 = CInt(20);
         let add = Add(Box::new(c10), Box::new(c20));
 
         assert_eq!(check(add, &env), Ok(TReal));
