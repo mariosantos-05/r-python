@@ -175,4 +175,43 @@ mod tests {
 
         assert_eq!(check(add, &env), Ok(TReal));
     }
+
+    #[test]
+    fn check_type_error_arithmetic_expression(){
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let bool = CFalse;
+        let add = Add(Box::new(c10), Box::new(bool));
+
+        assert_eq!(check(add, &env), Err(String::from("[Type Error] expecting numeric type values.")));
+    }
+
+    #[test]
+    fn check_type_error_not_expression() {
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let not = Not(Box::new(c10));
+
+        assert_eq!(check(not, &env), Err(String::from("[Type Error] expecting a boolean type value.")));
+    }
+
+    #[test]
+    fn check_type_error_and_expression() {
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let bool = CTrue;
+        let and = And(Box::new(c10), Box::new(bool));
+
+        assert_eq!(check(and, &env), Err(String::from("[Type Error] expecting boolean type values.")));
+    }
+
+    #[test]
+    fn check_type_error_or_expression(){
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let bool = CTrue;
+        let or = Or(Box::new(c10), Box::new(bool));
+
+        assert_eq!(check(or, &env), Err(String::from("[Type Error] expecting boolean type values.")));
+    }
 }
