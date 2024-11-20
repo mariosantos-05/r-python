@@ -4,6 +4,7 @@
 
 pub mod interpreter;
 pub mod ir;
+pub mod tc;
 
 fn main() {
     println!("Hello, world!");
