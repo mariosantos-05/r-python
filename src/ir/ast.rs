@@ -46,7 +46,7 @@ pub enum Statement {
     VarDeclaration(Box<Name>),
     ValDeclaration(Box<Name>),
     Assignment(Box<Name>, Box<Expression>),
-    IfThenElse(Box<Expression>, Box<Statement>, Box<Statement>),
+    IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
 }
