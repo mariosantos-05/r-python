@@ -287,7 +287,10 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
             let value = eval(*cond, &env)?;
             match value {
                 Expression::CTrue => execute(*stmt_then, env),
-                Expression::CFalse => execute(*stmt_else, env),
+                Expression::CFalse => match stmt_else {
+                    Some(else_statement) => execute(*else_statement, env),
+                    None => Ok(env),
+                },
                 _ => Err(String::from("expecting a boolean value.")),
             }
         }
@@ -559,7 +562,7 @@ mod tests {
         let if_statement = Statement::IfThenElse(
             Box::new(condition),
             Box::new(then_stmt),
-            Box::new(else_stmt),
+            Some(Box::new(else_stmt)),
         );
 
         let setup_stmt = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
@@ -567,6 +570,58 @@ mod tests {
 
         match execute(program, env) {
             Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(1))),
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
+
+    #[test]
+    fn eval_if_then_optional_else() {
+        /*
+         * Test for simple if-then-else statement
+         *
+         * > x = 1
+         * > y = 0
+         * > if x == y:
+         * >   y = 1
+         * > else:
+         * >    y = 2
+         * >    if x < 0:
+         * >        y = 5
+         *
+         * After executing, 'y' should be 2.
+         */
+
+        let env = HashMap::new();
+
+        let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
+        let second_then_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(5)));
+
+        let second_if_stmt =
+            IfThenElse(Box::new(second_condition), Box::new(second_then_stmt), None);
+
+        let else_setup_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(2)));
+        let else_stmt = Sequence(Box::new(else_setup_stmt), Box::new(second_if_stmt));
+
+        let first_condition = EQ(
+            Box::new(Var(String::from("x"))),
+            Box::new(Var(String::from("y"))),
+        );
+        let first_then_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
+
+        let first_if_stmt = IfThenElse(
+            Box::new(first_condition),
+            Box::new(first_then_stmt),
+            Some(Box::new(else_stmt)),
+        );
+
+        let second_assignment = Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let setup_stmt = Sequence(Box::new(second_assignment), Box::new(first_if_stmt));
+
+        let first_assignment = Assignment(Box::new(String::from("x")), Box::new(CInt(1)));
+        let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
+
+        match execute(program, env) {
+            Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(2))),
             Err(s) => assert!(false, "{}", s),
         }
     }
@@ -666,44 +721,41 @@ mod tests {
     //     }
     // }
 
-    // #[test]
-    // fn eval_complex_sequence() {
-    //     /*
-    //      * Sequence with multiple assignments and expressions
-    //      *
-    //      * > x = 5
-    //      * > y = 0
-    //      * > z = 2 * x + 3
-    //      *
-    //      * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
-    //      */
-    //     let env = HashMap::new();
+    #[test]
+    fn eval_complex_sequence() {
+        /*
+         * Sequence with multiple assignments and expressions
+         *
+         * > x = 5
+         * > y = 0
+         * > z = 2 * x + 3
+         *
+         * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
+         */
+        let env = HashMap::new();
 
-    //     let a1 = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(5)));
-    //     let a2 = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
-    //     let a3 = Statement::Assignment(
-    //         Box::new(String::from("z")),
-    //         Box::new(Add(
-    //             Box::new(Mul(
-    //                 Box::new(CInt(2)),
-    //                 Box::new(Var(String::from("x"))),
-    //             )),
-    //             Box::new(CInty(3)),
-    //         )),
-    //     );
+        let a1 = Assignment(Box::new(String::from("x")), Box::new(CInt(5)));
+        let a2 = Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let a3 = Assignment(
+            Box::new(String::from("z")),
+            Box::new(Add(
+                Box::new(Mul(Box::new(CInt(2)), Box::new(Var(String::from("x"))))),
+                Box::new(CInt(3)),
+            )),
+        );
 
-    //     let program = Statement::Sequence(
-    //         Box::new(a1),
-    //         Box::new(Statement::Sequence(Box::new(a2), Box::new(a3))),
-    //     );
+        let program = Statement::Sequence(
+            Box::new(a1),
+            Box::new(Statement::Sequence(Box::new(a2), Box::new(a3))),
+        );
 
-    //     match execute(&program, env) {
-    //         Ok(new_env) => {
-    //             assert_eq!(new_env.get("x"), Some(&5));
-    //             assert_eq!(new_env.get("y"), Some(&0));
-    //             assert_eq!(new_env.get("z"), Some(&13));
-    //         }
-    //         Err(s) => assert!(false, "{}", s),
-    //     }
-    // }
+        match execute(program, env) {
+            Ok(new_env) => {
+                assert_eq!(new_env.get("x"), Some(&CInt(5)));
+                assert_eq!(new_env.get("y"), Some(&CInt(0)));
+                assert_eq!(new_env.get("z"), Some(&CInt(13)));
+            }
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
 }
