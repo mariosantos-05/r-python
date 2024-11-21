@@ -626,6 +626,113 @@ mod tests {
         }
     }
 
+    #[test]
+    fn eval_while_with_if() {
+        /*
+         *   Test for more complex while statement
+         *
+         *   x = 1
+         *   y = 1.0
+         *   while x <= 10:
+         *       if x == 10:
+         *           y = y / 1024
+         *       x = x + 1
+         *
+         *   After executing this program, 'x' must be 11
+         *   and 'y' must be 0.0009765625
+         */
+
+        let env = HashMap::new();
+
+        let a1 = Assignment(Box::new(String::from("x")), Box::new(CInt(1)));
+        let a2 = Assignment(Box::new(String::from("y")), Box::new(CReal(1.0)));
+        let a3 = Assignment(
+            Box::new(String::from("y")),
+            Box::new(Div(Box::new(Var(String::from("y"))), Box::new(CInt(1024)))),
+        );
+        let a4 = Assignment(
+            Box::new(String::from("x")),
+            Box::new(Add(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
+        );
+
+        let if_statement: Statement = IfThenElse(
+            Box::new(EQ(Box::new(Var(String::from("x"))), Box::new(CInt(10)))),
+            Box::new(a3),
+            None,
+        );
+
+        let seq_in_while = Sequence(Box::new(if_statement), Box::new(a4));
+
+        let while_statement = While(
+            Box::new(LTE(Box::new(Var(String::from("x"))), Box::new(CInt(10)))),
+            Box::new(seq_in_while),
+        );
+
+        let seq = Sequence(Box::new(a1), Box::new(a2));
+
+        let program = Sequence(Box::new(seq), Box::new(while_statement));
+
+        match execute(program, env) {
+            Ok(new_env) => {
+                assert_eq!(new_env.get("x"), Some(&CInt(11)));
+                assert_eq!(new_env.get("y"), Some(&CReal(0.0009765625)));
+            }
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
+
+    #[test]
+    fn eval_while_with_boolean() {
+        /*  Test for while statement using booleans
+         *
+         *   x = true
+         *   y = 1
+         *   while x:
+         *       if y > 1e9:
+         *           x = false
+         *       else:
+         *           y = y * 2
+         *
+         *   After executing this program 'y' must be equal 1073741824
+         *   and 'x' must be equal false
+         */
+
+        let env = HashMap::new();
+        let a1 = Assignment(Box::new(String::from("x")), Box::new(CTrue));
+        let a2 = Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
+        let a3 = Assignment(Box::new(String::from("x")), Box::new(CFalse));
+        let a4 = Assignment(
+            Box::new(String::from("y")),
+            Box::new(Mul(Box::new(Var(String::from("y"))), Box::new(CInt(2)))),
+        );
+
+        let if_then_else_statement = IfThenElse(
+            Box::new(GT(
+                Box::new(Var(String::from("y"))),
+                Box::new(CInt(1000000000)),
+            )),
+            Box::new(a3),
+            Some(Box::new(a4)),
+        );
+
+        let while_statement = While(
+            Box::new(Var(String::from("x"))),
+            Box::new(if_then_else_statement),
+        );
+
+        let program = Sequence(
+            Box::new(a1),
+            Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
+        );
+
+        match execute(program, env) {
+            Ok(new_env) => {
+                assert_eq!(new_env.get("x"), Some(&CFalse));
+                assert_eq!(new_env.get("y"), Some(&CInt(1073741824)));
+            }
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
     // #[test]
     // fn eval_while_loop_decrement() {
     //     /*
