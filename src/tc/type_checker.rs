@@ -92,8 +92,8 @@ fn check_bin_relational_expression(
 mod tests {
     use super::*;
 
-    use crate::ir::ast::Type::*;
     use crate::ir::ast::Expression::*;
+    use crate::ir::ast::Type::*;
 
     #[test]
     fn check_tlist_comparison() {
@@ -107,7 +107,7 @@ mod tests {
     fn check_tlist_comparison_different_types() {
         let t_list1 = TList(Box::new(TInteger));
         let t_list2 = TList(Box::new(TBool));
-        
+
         assert_eq!(t_list1 == t_list2, false);
     }
 
@@ -115,7 +115,6 @@ mod tests {
     fn check_ttuple_comparison() {
         let t_tuple1 = TTuple(vec![TInteger, TBool]);
         let t_tuple2 = TTuple(vec![TInteger, TBool]);
-        
 
         assert_eq!(t_tuple1 == t_tuple2, true);
     }
@@ -124,7 +123,6 @@ mod tests {
     fn check_ttuple_comparison_different_types() {
         let t_tuple1 = TTuple(vec![TInteger, TBool]);
         let t_tuple2 = TTuple(vec![TBool, TInteger]);
-        
 
         assert_eq!(t_tuple1 == t_tuple2, false);
     }
@@ -177,13 +175,16 @@ mod tests {
     }
 
     #[test]
-    fn check_type_error_arithmetic_expression(){
+    fn check_type_error_arithmetic_expression() {
         let env = HashMap::new();
         let c10 = CInt(10);
         let bool = CFalse;
         let add = Add(Box::new(c10), Box::new(bool));
 
-        assert_eq!(check(add, &env), Err(String::from("[Type Error] expecting numeric type values.")));
+        assert_eq!(
+            check(add, &env),
+            Err(String::from("[Type Error] expecting numeric type values."))
+        );
     }
 
     #[test]
@@ -192,7 +193,10 @@ mod tests {
         let c10 = CInt(10);
         let not = Not(Box::new(c10));
 
-        assert_eq!(check(not, &env), Err(String::from("[Type Error] expecting a boolean type value.")));
+        assert_eq!(
+            check(not, &env),
+            Err(String::from("[Type Error] expecting a boolean type value."))
+        );
     }
 
     #[test]
@@ -202,16 +206,22 @@ mod tests {
         let bool = CTrue;
         let and = And(Box::new(c10), Box::new(bool));
 
-        assert_eq!(check(and, &env), Err(String::from("[Type Error] expecting boolean type values.")));
+        assert_eq!(
+            check(and, &env),
+            Err(String::from("[Type Error] expecting boolean type values."))
+        );
     }
 
     #[test]
-    fn check_type_error_or_expression(){
+    fn check_type_error_or_expression() {
         let env = HashMap::new();
         let c10 = CInt(10);
         let bool = CTrue;
         let or = Or(Box::new(c10), Box::new(bool));
 
-        assert_eq!(check(or, &env), Err(String::from("[Type Error] expecting boolean type values.")));
+        assert_eq!(
+            check(or, &env),
+            Err(String::from("[Type Error] expecting boolean type values."))
+        );
     }
 }
