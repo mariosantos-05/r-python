@@ -8,12 +8,13 @@ type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
 
-pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+pub fn  eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     match exp {
         Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
         Expression::Sub(lhs, rhs) => sub(*lhs, *rhs, env),
         Expression::Mul(lhs, rhs) => mul(*lhs, *rhs, env),
         Expression::Div(lhs, rhs) => div(*lhs, *rhs, env),
+        Expression::Rmd(lhs, rhs) => rmd(*lhs, *rhs, env),
         Expression::And(lhs, rhs) => and(*lhs, *rhs, env),
         Expression::Or(lhs, rhs) => or(*lhs, *rhs, env),
         Expression::Not(lhs) => not(*lhs, env),
@@ -110,6 +111,15 @@ fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
+fn rmd(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    eval_binary_arith_op(
+        lhs,
+        rhs,
+        env,
+        |a, b| a % b,
+        "division '(/)' is only defined for numbers (integers and real).",
+    )
+}
 /* Boolean Expressions */
 fn eval_binary_boolean_op<F>(
     lhs: Expression,
@@ -298,27 +308,11 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
             let mut value = eval(*cond.clone(), &env)?;
             let mut new_env = env;
 
-            match (value) {
-                Expression::CTrue => {
-                    while value == Expression::CTrue {
-                        new_env = execute(*stmt.clone(), new_env.clone())?;
-                        value = eval(*cond.clone(), &new_env.clone())?;
-                    }
-                }
-                Expression::CReal(_) => {
-                    while value != Expression::CReal(0.0) {
-                        new_env = execute(*stmt.clone(), new_env.clone())?;
-                        value = eval(*cond.clone(), &new_env.clone())?;
-                    }
-                }
-                Expression::CInt(_) => {
-                    while value != Expression::CInt(0) {
-                        new_env = execute(*stmt.clone(), new_env.clone())?;
-                        value = eval(*cond.clone(), &new_env.clone())?;
-                    }
-                }
-                _ => {}
+            while value == Expression::CTrue {
+                new_env = execute(*stmt.clone(), new_env.clone())?;
+                value = eval(*cond.clone(), &new_env.clone())?;
             }
+
             Ok(new_env)
         }
         Statement::Sequence(s1, s2) => execute(*s1, env).and_then(|new_env| execute(*s2, new_env)),
