@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::Expression;
-use crate::ir::ast::Name;
-use crate::ir::ast::Statement;
+use crate::ir::ast::{Expression, Name, Statement};
 
 type ErrorMessage = String;
 
@@ -280,7 +278,7 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
         Statement::Assignment(name, exp) => {
             let value = eval(*exp, &env)?;
             let mut new_env = env;
-            new_env.insert(*name.clone(), value);
+            new_env.insert(name.clone(), value);
             Ok(new_env.clone())
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
@@ -483,7 +481,7 @@ mod tests {
     #[test]
     fn execute_assignment() {
         let env = HashMap::new();
-        let assign_stmt = Assignment(Box::from(String::from("x")), Box::new(CInt(42)));
+        let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)));
 
         match execute(assign_stmt, env) {
             Ok(new_env) => assert_eq!(new_env.get("x"), Some(&CInt(42))),
@@ -507,29 +505,29 @@ mod tests {
          */
         let env = HashMap::new();
 
-        let a1 = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
-        let a2 = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
-        let a3 = Statement::Assignment(
-            Box::new(String::from("y")),
+        let a1 = Assignment(String::from("x"), Box::new(CInt(10)));
+        let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
+        let a3 = Assignment(
+            String::from("y"),
             Box::new(Add(
                 Box::new(Var(String::from("y"))),
                 Box::new(Var(String::from("x"))),
             )),
         );
-        let a4 = Statement::Assignment(
-            Box::new(String::from("x")),
+        let a4 = Assignment(
+            String::from("x"),
             Box::new(Sub(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
         );
 
-        let seq1 = Statement::Sequence(Box::new(a3), Box::new(a4));
+        let seq1 = Sequence(Box::new(a3), Box::new(a4));
 
-        let while_statement = Statement::While(
+        let while_statement = While(
             Box::new(GT(Box::new(Var(String::from("x"))), Box::new(CInt(0)))),
             Box::new(seq1),
         );
 
-        let seq2 = Statement::Sequence(Box::new(a2), Box::new(while_statement));
-        let program = Statement::Sequence(Box::new(a1), Box::new(seq2));
+        let seq2 = Sequence(Box::new(a2), Box::new(while_statement));
+        let program = Sequence(Box::new(a1), Box::new(seq2));
 
         match execute(program, env) {
             Ok(new_env) => {
@@ -556,17 +554,17 @@ mod tests {
         let env = HashMap::new();
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
-        let then_stmt = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
-        let else_stmt = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
+        let else_stmt = Assignment(String::from("y"), Box::new(CInt(0)));
 
-        let if_statement = Statement::IfThenElse(
+        let if_statement = IfThenElse(
             Box::new(condition),
             Box::new(then_stmt),
             Some(Box::new(else_stmt)),
         );
 
-        let setup_stmt = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
-        let program = Statement::Sequence(Box::new(setup_stmt), Box::new(if_statement));
+        let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)));
+        let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
         match execute(program, env) {
             Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(1))),
@@ -594,19 +592,19 @@ mod tests {
         let env = HashMap::new();
 
         let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
-        let second_then_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(5)));
+        let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)));
 
         let second_if_stmt =
             IfThenElse(Box::new(second_condition), Box::new(second_then_stmt), None);
 
-        let else_setup_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(2)));
+        let else_setup_stmt = Assignment(String::from("y"), Box::new(CInt(2)));
         let else_stmt = Sequence(Box::new(else_setup_stmt), Box::new(second_if_stmt));
 
         let first_condition = EQ(
             Box::new(Var(String::from("x"))),
             Box::new(Var(String::from("y"))),
         );
-        let first_then_stmt = Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
+        let first_then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
 
         let first_if_stmt = IfThenElse(
             Box::new(first_condition),
@@ -614,10 +612,10 @@ mod tests {
             Some(Box::new(else_stmt)),
         );
 
-        let second_assignment = Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let second_assignment = Assignment(String::from("y"), Box::new(CInt(0)));
         let setup_stmt = Sequence(Box::new(second_assignment), Box::new(first_if_stmt));
 
-        let first_assignment = Assignment(Box::new(String::from("x")), Box::new(CInt(1)));
+        let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)));
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
         match execute(program, env) {
@@ -641,29 +639,29 @@ mod tests {
     //      */
     //     let env = HashMap::new();
 
-    //     let a1 = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(3)));
-    //     let a2 = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(10)));
-    //     let a3 = Statement::Assignment(
-    //         Box::new(String::from("y")),
+    //     let a1 = Assignment(String::from("x")), Box:new(CInt(3)));
+    //     let a2 = Assignment(String::from("y")), Box:new(CInt(10)));
+    //     let a3 = Assignment(
+    //         String::from("y")),
     //         Box::new(Sub(
     //             Box::new(Var(String::from("y"))),
     //             Box::new(CInt(1)),
     //         )),
     //     );
-    //     let a4 = Statement::Assignment(
-    //         Box::new(String::from("x")),
+    //     let a4 = Assignment(
+    //         String::from("x")),
     //         Box::new(Sub(
     //             Box::new(Var(String::from("x"))),
     //             Box::new(CInt(1)),
     //         )),
     //     );
 
-    //     let seq1 = Statement::Sequence(Box::new(a3), Box::new(a4));
+    //     let seq1 = Sequence(Box::new(a3), Box::new(a4));
     //     let while_statement =
-    //         Statement::While(Box::new(Var(String::from("x"))), Box::new(seq1));
-    //     let program = Statement::Sequence(
+    //         While(Box::new(Var(String::from("x"))), Box::new(seq1));
+    //     let program = Sequence(
     //         Box::new(a1),
-    //         Box::new(Statement::Sequence(Box::new(a2), Box::new(while_statement))),
+    //         Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
     //     );
 
     //     match execute(&program, env) {
@@ -694,9 +692,9 @@ mod tests {
     //     let env = HashMap::new();
 
     //     let inner_then_stmt =
-    //         Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(1)));
+    //         Assignment(String::from("y")), Box:new(CInt(1)));
     //     let inner_else_stmt =
-    //         Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(2)));
+    //         Assignment(String::from("y")), Box:new(CInt(2)));
     //     let inner_if_statement = Statement::IfThenElse(
     //         Box::new(Var(String::from("x"))),
     //         Box::new(inner_then_stmt),
@@ -704,7 +702,7 @@ mod tests {
     //     );
 
     //     let outer_else_stmt =
-    //         Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+    //         Assignment(String::from("y")), Box:new(CInt(0)));
     //     let outer_if_statement = Statement::IfThenElse(
     //         Box::new(Var(String::from("x"))),
     //         Box::new(inner_if_statement),
@@ -712,8 +710,8 @@ mod tests {
     //     );
 
     //     let setup_stmt =
-    //         Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(10)));
-    //     let program = Statement::Sequence(Box::new(setup_stmt), Box::new(outer_if_statement));
+    //         Assignment(String::from("x")), Box:new(CInt(10)));
+    //     let program = Sequence(Box::new(setup_stmt), Box::new(outer_if_statement));
 
     //     match execute(&program, env) {
     //         Ok(new_env) => assert_eq!(new_env.get("y"), Some(&1)),
@@ -734,20 +732,17 @@ mod tests {
          */
         let env = HashMap::new();
 
-        let a1 = Assignment(Box::new(String::from("x")), Box::new(CInt(5)));
-        let a2 = Assignment(Box::new(String::from("y")), Box::new(CInt(0)));
+        let a1 = Assignment(String::from("x"), Box::new(CInt(5)));
+        let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
         let a3 = Assignment(
-            Box::new(String::from("z")),
+            String::from("z"),
             Box::new(Add(
                 Box::new(Mul(Box::new(CInt(2)), Box::new(Var(String::from("x"))))),
                 Box::new(CInt(3)),
             )),
         );
 
-        let program = Statement::Sequence(
-            Box::new(a1),
-            Box::new(Statement::Sequence(Box::new(a2), Box::new(a3))),
-        );
+        let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
         match execute(program, env) {
             Ok(new_env) => {
