@@ -115,7 +115,7 @@ fn rmd(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
         rhs,
         env,
         |a, b| a % b,
-        "division '(/)' is only defined for numbers (integers and real).",
+        "Remainder operation '(%)' is only defined for numbers (integers and real).",
     )
 }
 /* Boolean Expressions */
