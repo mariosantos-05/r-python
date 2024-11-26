@@ -319,8 +319,6 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Mul;
-    use std::panic::AssertUnwindSafe;
 
     use super::*;
     use crate::ir::ast::Expression::*;
