@@ -54,7 +54,6 @@ pub enum Statement {
     Sequence(Box<Statement>, Box<Statement>),
 }
 
-
 #[derive(Debug)]
 pub enum ParseError {
     IndentationError(usize),

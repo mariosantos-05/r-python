@@ -10,7 +10,6 @@ pub mod ir;
 pub mod parser;
 pub mod tc;
 
-
 fn run_test(name: &str, program: &str) {
     println!("\n=== Running test: {} ===", name);
     println!("Program:\n{}\n", program);

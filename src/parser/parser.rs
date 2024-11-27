@@ -84,7 +84,7 @@ fn comparison_expression(input: &str) -> IResult<&str, Expression> {
             "<=" => Expression::LTE(Box::new(left), Box::new(right)),
             "==" => Expression::EQ(Box::new(left), Box::new(right)),
             _ => unreachable!(),
-        }
+        },
     ))
 }
 
@@ -126,7 +126,7 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
     let (input, then_block) = indented_block(input)?;
-    
+
     let (input, else_block) = opt(preceded(
         tuple((line_ending, space0, tag("else"), char(':'))),
         indented_block,
@@ -149,8 +149,8 @@ fn declaration(input: &str) -> IResult<&str, Statement> {
     Ok((
         input,
         match keyword {
-            "var" => Statement::VarDeclaration(name),  // No Box needed
-            "val" => Statement::ValDeclaration(name),  // No Box needed
+            "var" => Statement::VarDeclaration(name), // No Box needed
+            "val" => Statement::ValDeclaration(name), // No Box needed
             _ => unreachable!(),
         },
     ))
@@ -167,8 +167,8 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     Ok((
         input,
         Statement::Assignment(
-            name,  // No longer need to Box the name
-            Box::new(expr)
+            name, // No longer need to Box the name
+            Box::new(expr),
         ),
     ))
 }
@@ -193,7 +193,7 @@ pub fn parse(input: &str) -> IResult<&str, Vec<Statement>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;  // Import everything from parent module
+    use super::*; // Import everything from parent module
     use crate::ir::ast::{Expression, Statement}; // Import AST types
     #[test]
     fn test_simple_assignment() {
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(rest, "");
         match stmt {
             Statement::Assignment(name, expr) => {
-                assert_eq!(name, "x");  // Direct string comparison
+                assert_eq!(name, "x"); // Direct string comparison
                 match *expr {
                     Expression::CInt(val) => assert_eq!(val, 42),
                     _ => panic!("Expected CInt"),
@@ -259,7 +259,7 @@ mod tests {
             Statement::IfThenElse(condition, then_block, else_block) => {
                 // Check condition - using GT instead of Comparison
                 assert!(matches!(**condition, Expression::GT(_, _)));
-                
+
                 // Check then block
                 match **then_block {
                     Statement::Block(ref stmts) => {
@@ -344,21 +344,21 @@ mod tests {
             _ => panic!("Expected IfThenElse"),
         }
     }
-    
+
     #[test]
     fn test_if_else_statement() {
         let input = "if x > 0:\n    y = 1\nelse:\n    y = 2";
         let (rest, stmt) = if_statement(input).unwrap();
         assert_eq!(rest, "");
-    
+
         match stmt {
             Statement::IfThenElse(condition, then_block, else_block) => {
                 // Check condition
-                assert!(matches!(*condition, Expression::GT(
-                    _box_ref @ _,
-                    _box_ref2 @ _
-                )));
-    
+                assert!(matches!(
+                    *condition,
+                    Expression::GT(_box_ref @ _, _box_ref2 @ _)
+                ));
+
                 // Check then block
                 match *then_block {
                     Statement::Block(ref stmts) => {
@@ -367,13 +367,13 @@ mod tests {
                             Statement::Assignment(name, expr) => {
                                 assert_eq!(name, "y");
                                 assert!(matches!(**expr, Expression::CInt(1)));
-                            },
-                            _ => panic!("Expected Assignment")
+                            }
+                            _ => panic!("Expected Assignment"),
                         }
-                    },
-                    _ => panic!("Expected Block")
+                    }
+                    _ => panic!("Expected Block"),
                 }
-    
+
                 // Check else block
                 match else_block {
                     Some(else_stmt) => match *else_stmt {
@@ -383,16 +383,16 @@ mod tests {
                                 Statement::Assignment(name, expr) => {
                                     assert_eq!(name, "y");
                                     assert!(matches!(**expr, Expression::CInt(2)));
-                                },
-                                _ => panic!("Expected Assignment")
+                                }
+                                _ => panic!("Expected Assignment"),
                             }
-                        },
-                        _ => panic!("Expected Block")
+                        }
+                        _ => panic!("Expected Block"),
                     },
-                    None => panic!("Expected Some else block")
+                    None => panic!("Expected Some else block"),
                 }
-            },
-            _ => panic!("Expected IfThenElse")
+            }
+            _ => panic!("Expected IfThenElse"),
         }
     }
 

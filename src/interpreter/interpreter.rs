@@ -26,7 +26,6 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
     }
 }
 
-
 fn is_constant(exp: Expression) -> bool {
     match exp {
         Expression::CTrue => true,
@@ -273,7 +272,6 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
         "(<=) is only defined for numbers (integers and real).",
     )
 }
-
 
 pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
