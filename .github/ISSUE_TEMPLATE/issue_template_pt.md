@@ -1,31 +1,25 @@
 # Título da Issue
+[Substitua com um título claro e descritivo]
+
+## Tipo de Issue
+- [ ] Relatório de Bug
+- [ ] Solicitação de Funcionalidade
+- [ ] Documentação
+- [ ] Outro (especifique)
 
 ## Descrição
+Por favor, forneça uma descrição clara e detalhada da issue ou solicitação de funcionalidade.
 
-Por favor, forneça uma descrição clara e concisa do problema.
+### Para Relatórios de Bug:
+#### Passos para Reproduzir
+1. [Primeiro Passo]
+2. [Segundo Passo]
+3. [Passos Adicionais...]
 
-## Passos para Reproduzir (para bugs)
+#### Comportamento Esperado
+O que você esperava que acontecesse?
 
-1. [ ] Passo 1
-2. [ ] Passo 2
-3. [ ] Passo 3
+#### Comportamento Real
+O que realmente aconteceu? Inclua mensagens de erro, stack traces ou screenshots.
 
-## Comportamento Esperado
-
-Descreva o que você esperava que acontecesse.
-
-## Comportamento Real
-
-Descreva o que realmente aconteceu.
-
-## Contexto Adicional
-
-Adicione qualquer outra informação relevante ou capturas de tela sobre o problema.
-
-## Detalhes do Ambiente
-
-- **Sistema Operacional**: (ex: Ubuntu 20.04, macOS 13.0)
-- **Versão do Rust**: (ex: rustc 1.72.0)
-- **Versão do Cargo**: (ex: cargo 1.72.0)
-
-Obrigado por nos ajudar a melhorar o projeto!
+#### Amostra de Código

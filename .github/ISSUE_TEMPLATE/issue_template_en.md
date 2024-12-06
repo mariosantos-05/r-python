@@ -1,31 +1,25 @@
 # Issue Title
+[Replace with a clear, descriptive title]
+
+## Issue Type
+- [ ] Bug Report
+- [ ] Feature Request
+- [ ] Documentation
+- [ ] Other (please specify)
 
 ## Description
+Please provide a clear and detailed description of the issue or feature request.
 
-Please provide a clear and concise description of the issue.
+### For Bug Reports:
+#### Steps to Reproduce
+1. [First Step]
+2. [Second Step]
+3. [Additional Steps...]
 
-## Steps to Reproduce (for bugs)
+#### Expected Behavior
+What did you expect to happen?
 
-1. [ ] Step 1
-2. [ ] Step 2
-3. [ ] Step 3
+#### Actual Behavior
+What actually happened? Include any error messages, stack traces, or screenshots.
 
-## Expected Behavior
-
-Describe what you expected to happen.
-
-## Actual Behavior
-
-Describe what actually happened.
-
-## Additional Context
-
-Add any other relevant information or screenshots about the issue.
-
-## Environment Details
-
-- **Operating System**: (e.g., Ubuntu 20.04, macOS 13.0)
-- **Rust Version**: (e.g., rustc 1.72.0)
-- **Cargo Version**: (e.g., cargo 1.72.0)
-
-Thank you for helping us improve the project!
+#### Code Sample
