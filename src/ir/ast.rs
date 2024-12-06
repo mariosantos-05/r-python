@@ -27,6 +27,7 @@ pub enum Expression {
     Sub(Box<Expression>, Box<Expression>),
     Mul(Box<Expression>, Box<Expression>),
     Div(Box<Expression>, Box<Expression>),
+    Rmd(Box<Expression>, Box<Expression>),
 
     /* boolean expressions over booleans */
     And(Box<Expression>, Box<Expression>),
