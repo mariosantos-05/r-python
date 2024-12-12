@@ -4,7 +4,6 @@ pub type Name = String;
 pub struct Function {
     pub params: Option<Vec<(Name, Type)>>, 
     pub body: Box<Statement>,  
-    pub return_exp: Expression,
     pub return_type: Type,
 }
 
@@ -62,4 +61,5 @@ pub enum Statement {
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Name, Function),
+    Return(Box<Expression>)
 }
