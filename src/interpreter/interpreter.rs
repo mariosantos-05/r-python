@@ -1,27 +1,29 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::{Expression, Name, Statement};
+use crate::ir::ast::{Expression, Function, Name, Statement};
 
 type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
+type FuncEnvironment = HashMap<Name, Function>;
 
-pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+pub fn eval(exp: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     match exp {
-        Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
-        Expression::Sub(lhs, rhs) => sub(*lhs, *rhs, env),
-        Expression::Mul(lhs, rhs) => mul(*lhs, *rhs, env),
-        Expression::Div(lhs, rhs) => div(*lhs, *rhs, env),
-        Expression::Rmd(lhs, rhs) => rmd(*lhs, *rhs, env),
-        Expression::And(lhs, rhs) => and(*lhs, *rhs, env),
-        Expression::Or(lhs, rhs) => or(*lhs, *rhs, env),
-        Expression::Not(lhs) => not(*lhs, env),
-        Expression::EQ(lhs, rhs) => eq(*lhs, *rhs, env),
-        Expression::GT(lhs, rhs) => gt(*lhs, *rhs, env),
-        Expression::LT(lhs, rhs) => lt(*lhs, *rhs, env),
-        Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
-        Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
+        Expression::Add(lhs, rhs) => add(*lhs, *rhs, env, func_env),
+        Expression::Sub(lhs, rhs) => sub(*lhs, *rhs, env, func_env),
+        Expression::Mul(lhs, rhs) => mul(*lhs, *rhs, env, func_env),
+        Expression::Div(lhs, rhs) => div(*lhs, *rhs, env, func_env),
+        Expression::Rmd(lhs, rhs) => rmd(*lhs, *rhs, env, func_env),
+        Expression::And(lhs, rhs) => and(*lhs, *rhs, env, func_env),
+        Expression::Or(lhs, rhs) => or(*lhs, *rhs, env, func_env),
+        Expression::Not(lhs) => not(*lhs, env, func_env),
+        Expression::EQ(lhs, rhs) => eq(*lhs, *rhs, env, func_env),
+        Expression::GT(lhs, rhs) => gt(*lhs, *rhs, env, func_env),
+        Expression::LT(lhs, rhs) => lt(*lhs, *rhs, env, func_env),
+        Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env, func_env),
+        Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env, func_env),
         Expression::Var(name) => lookup(name, env),
+        Expression::FuncCall(name, args) => eval_function_call(&name, args, env, func_env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -50,14 +52,15 @@ fn eval_binary_arith_op<F>(
     lhs: Expression,
     rhs: Expression,
     env: &Environment,
+    func_env: &FuncEnvironment,
     op: F,
     error_msg: &str,
 ) -> Result<Expression, ErrorMessage>
 where
     F: Fn(f64, f64) -> f64,
 {
-    let v1 = eval(lhs, env)?;
-    let v2 = eval(rhs, env)?;
+    let v1 = eval(lhs, env, func_env)?;
+    let v2 = eval(rhs, env, func_env)?;
     match (v1, v2) {
         (Expression::CInt(v1), Expression::CInt(v2)) => {
             Ok(Expression::CInt(op(v1 as f64, v2 as f64) as i32))
@@ -69,51 +72,56 @@ where
     }
 }
 
-fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn add(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| a + b,
         "addition '(+)' is only defined for numbers (integers and real).",
     )
 }
 
-fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn sub(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| a - b,
         "subtraction '(-)' is only defined for numbers (integers and real).",
     )
 }
 
-fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn mul(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| a * b,
         "multiplication '(*)' is only defined for numbers (integers and real).",
     )
 }
 
-fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn div(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| a / b,
         "division '(/)' is only defined for numbers (integers and real).",
     )
 }
 
-fn rmd(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn rmd(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| a % b,
         "Remainder operation '(%)' is only defined for numbers (integers and real).",
     )
@@ -123,14 +131,15 @@ fn eval_binary_boolean_op<F>(
     lhs: Expression,
     rhs: Expression,
     env: &Environment,
+    func_env: &FuncEnvironment,
     op: F,
     error_msg: &str,
 ) -> Result<Expression, ErrorMessage>
 where
     F: Fn(bool, bool) -> Expression,
 {
-    let v1 = eval(lhs, env)?;
-    let v2 = eval(rhs, env)?;
+    let v1 = eval(lhs, env, func_env)?;
+    let v2 = eval(rhs, env, func_env)?;
     match (v1, v2) {
         (Expression::CTrue, Expression::CTrue) => Ok(op(true, true)),
         (Expression::CTrue, Expression::CFalse) => Ok(op(true, false)),
@@ -140,11 +149,12 @@ where
     }
 }
 
-fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn and(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a && b {
                 Expression::CTrue
@@ -156,11 +166,12 @@ fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn or(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a || b {
                 Expression::CTrue
@@ -172,8 +183,8 @@ fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn not(lhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
-    let v = eval(lhs, env)?;
+fn not(lhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
+    let v = eval(lhs, env, func_env)?;
     match v {
         Expression::CTrue => Ok(Expression::CFalse),
         Expression::CFalse => Ok(Expression::CTrue),
@@ -186,14 +197,15 @@ fn eval_binary_rel_op<F>(
     lhs: Expression,
     rhs: Expression,
     env: &Environment,
+    func_env: &FuncEnvironment,
     op: F,
     error_msg: &str,
 ) -> Result<Expression, ErrorMessage>
 where
     F: Fn(f64, f64) -> Expression,
 {
-    let v1 = eval(lhs, env)?;
-    let v2 = eval(rhs, env)?;
+    let v1 = eval(lhs, env, func_env)?;
+    let v2 = eval(rhs, env, func_env)?;
     match (v1, v2) {
         (Expression::CInt(v1), Expression::CInt(v2)) => Ok(op(v1 as f64, v2 as f64)),
         (Expression::CInt(v1), Expression::CReal(v2)) => Ok(op(v1 as f64, v2)),
@@ -203,11 +215,12 @@ where
     }
 }
 
-fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eq(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a == b {
                 Expression::CTrue
@@ -219,11 +232,12 @@ fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn gt(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a > b {
                 Expression::CTrue
@@ -235,11 +249,12 @@ fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn lt(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a < b {
                 Expression::CTrue
@@ -251,11 +266,12 @@ fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn gte(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a >= b {
                 Expression::CTrue
@@ -267,11 +283,12 @@ fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn lte(lhs: Expression, rhs: Expression, env: &Environment, func_env: &FuncEnvironment) -> Result<Expression, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
         env,
+        func_env,
         |a, b| {
             if a <= b {
                 Expression::CTrue
@@ -283,36 +300,70 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
+fn eval_function_call (
+    name: &Name,
+    args: Vec<Expression>,
+    env: &Environment,
+    func_env: &FuncEnvironment
+) -> Result<Expression, ErrorMessage> {
+    if let Some(func) = func_env.get(name) {
+        let mut local_env = env.clone();
+
+        if let Some(params) = &func.params {
+            if params.len() != args.len() {
+                return Err(format!("{} expected {} arguments, got {}", name, params.len(), args.len()));
+            }
+            
+            for (arg, param) in args.iter().zip(params) {
+                let value = eval(arg.clone(), &local_env, &func_env)?;
+                local_env.insert(param.0.clone(), value);
+            }
+        }
+
+        let (new_env, new_func_env) = execute(*func.body.clone(), local_env, func_env.clone())?;
+        let value = eval(func.return_exp.clone(), &new_env, &new_func_env)?;
+
+        Ok(value)
+    } else {
+        Err(format!("{} is not defined", name))
+    }
+}
+
+pub fn execute(stmt: Statement, env: Environment, func_env: FuncEnvironment) -> Result<(Environment, FuncEnvironment), ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
-            let value = eval(*exp, &env)?;
+            let value = eval(*exp, &env, &func_env)?;
             let mut new_env = env;
             new_env.insert(name.clone(), value);
-            Ok(new_env.clone())
+            Ok((new_env.clone(), func_env))
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
-            let value = eval(*cond, &env)?;
+            let value = eval(*cond, &env, &func_env)?;
             match value {
-                Expression::CTrue => execute(*stmt_then, env),
+                Expression::CTrue => execute(*stmt_then, env, func_env),
                 Expression::CFalse => match stmt_else {
-                    Some(else_statement) => execute(*else_statement, env),
-                    None => Ok(env),
+                    Some(else_statement) => execute(*else_statement, env, func_env),
+                    None => Ok((env, func_env)),
                 },
                 _ => Err(String::from("expecting a boolean value.")),
             }
         }
         Statement::While(cond, stmt) => {
-            let mut value = eval(*cond.clone(), &env)?;
-            let mut new_env = env;
+            let mut value = eval(*cond.clone(), &env, &func_env)?;
+            let (mut new_env, mut new_func_env) = (env, func_env);
             while value == Expression::CTrue {
-                new_env = execute(*stmt.clone(), new_env.clone())?;
-                value = eval(*cond.clone(), &new_env.clone())?;
+                (new_env, new_func_env) = execute(*stmt.clone(), new_env, new_func_env)?;
+                value = eval(*cond.clone(), &new_env.clone(), &new_func_env.clone())?;
             }
 
-            Ok(new_env)
+            Ok((new_env, new_func_env))
         }
-        Statement::Sequence(s1, s2) => execute(*s1, env).and_then(|new_env| execute(*s2, new_env)),
+        Statement::Sequence(s1, s2) => execute(*s1, env, func_env).and_then(|(new_env, new_func_env)| execute(*s2, new_env, new_func_env)),
+        Statement::FuncDef(name, func) => {
+            let mut new_func_env = func_env;
+            new_func_env.insert(name.clone(), func);
+            Ok((env, new_func_env.clone()))
+        }
         _ => Err(String::from("not implemented yet")),
     }
 }
@@ -323,126 +374,140 @@ mod tests {
     use super::*;
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Statement::*;
+    use crate::ir::ast::Type::*;
     use approx::relative_eq;
 
     #[test]
     fn eval_constant() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
 
-        assert_eq!(eval(c10, &env), Ok(CInt(10)));
-        assert_eq!(eval(c20, &env), Ok(CInt(20)));
+        assert_eq!(eval(c10, &env, &func_env), Ok(CInt(10)));
+        assert_eq!(eval(c20, &env, &func_env), Ok(CInt(20)));
     }
 
     #[test]
     fn eval_add_expression1() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
         let add1 = Add(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(add1, &env), Ok(CInt(30)));
+        assert_eq!(eval(add1, &env, &func_env), Ok(CInt(30)));
     }
 
     #[test]
     fn eval_add_expression2() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
         let c30 = CInt(30);
         let add1 = Add(Box::new(c10), Box::new(c20));
         let add2 = Add(Box::new(add1), Box::new(c30));
-        assert_eq!(eval(add2, &env), Ok(CInt(60)));
+        assert_eq!(eval(add2, &env, &func_env), Ok(CInt(60)));
     }
 
     #[test]
     fn eval_add_expression3() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CReal(20.5);
         let add1 = Add(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(add1, &env), Ok(CReal(30.5)));
+        assert_eq!(eval(add1, &env, &func_env), Ok(CReal(30.5)));
     }
 
     #[test]
     fn eval_sub_expression1() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
         let sub1 = Sub(Box::new(c20), Box::new(c10));
-        assert_eq!(eval(sub1, &env), Ok(CInt(10)));
+        assert_eq!(eval(sub1, &env, &func_env), Ok(CInt(10)));
     }
 
     #[test]
     fn eval_sub_expression2() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c100 = CInt(100);
         let c200 = CInt(300);
         let sub1 = Sub(Box::new(c200), Box::new(c100));
-        assert_eq!(eval(sub1, &env), Ok(CInt(200)));
+        assert_eq!(eval(sub1, &env, &func_env), Ok(CInt(200)));
     }
 
     #[test]
     fn eval_sub_expression3() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c100 = CReal(100.5);
         let c300 = CInt(300);
         let sub1 = Sub(Box::new(c300), Box::new(c100));
-        assert_eq!(eval(sub1, &env), Ok(CReal(199.5)));
+        assert_eq!(eval(sub1, &env, &func_env), Ok(CReal(199.5)));
     }
 
     #[test]
     fn eval_mul_expression1() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(mul1, &env), Ok(CInt(200)));
+        assert_eq!(eval(mul1, &env, &func_env), Ok(CInt(200)));
     }
 
     #[test]
     fn eval_mul_expression2() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CReal(10.5);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(mul1, &env), Ok(CReal(210.0)));
+        assert_eq!(eval(mul1, &env, &func_env), Ok(CReal(210.0)));
     }
 
     #[test]
     fn eval_div_expression1() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c20 = CInt(20);
         let div1 = Div(Box::new(c20), Box::new(c10));
-        assert_eq!(eval(div1, &env), Ok(CInt(2)));
+        assert_eq!(eval(div1, &env, &func_env), Ok(CInt(2)));
     }
 
     #[test]
     fn eval_div_expression2() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c3 = CInt(3);
         let div1 = Div(Box::new(c10), Box::new(c3));
-        assert_eq!(eval(div1, &env), Ok(CInt(3)));
+        assert_eq!(eval(div1, &env, &func_env), Ok(CInt(3)));
     }
 
     #[test]
     fn eval_div_expression3() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c3 = CInt(3);
         let c21 = CInt(21);
         let div1 = Div(Box::new(c21), Box::new(c3));
-        assert_eq!(eval(div1, &env), Ok(CInt(7)));
+        assert_eq!(eval(div1, &env, &func_env), Ok(CInt(7)));
     }
 
     #[test]
     fn eval_div_expression4() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let c10 = CInt(10);
         let c3 = CReal(3.0);
         let div1 = Div(Box::new(c10), Box::new(c3));
-        let res = eval(div1, &env);
+        let res = eval(div1, &env, &func_env);
         match res {
             Ok(CReal(v)) => assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON)),
             Err(msg) => assert!(false, "{}", msg),
@@ -453,39 +518,43 @@ mod tests {
     #[test]
     fn eval_variable() {
         let env = HashMap::from([(String::from("x"), CInt(10)), (String::from("y"), CInt(20))]);
+        let func_env = HashMap::new();
         let v1 = Var(String::from("x"));
         let v2 = Var(String::from("y"));
-        assert_eq!(eval(v1, &env), Ok(CInt(10)));
-        assert_eq!(eval(v2, &env), Ok(CInt(20)));
+        assert_eq!(eval(v1, &env, &func_env), Ok(CInt(10)));
+        assert_eq!(eval(v2, &env, &func_env), Ok(CInt(20)));
     }
 
     #[test]
     fn eval_expression_with_variables() {
         let env = HashMap::from([(String::from("a"), CInt(5)), (String::from("b"), CInt(3))]);
+        let func_env = HashMap::new();
         let expr = Mul(
             Box::new(Var(String::from("a"))),
             Box::new(Add(Box::new(Var(String::from("b"))), Box::new(CInt(2)))),
         );
-        assert_eq!(eval(expr, &env), Ok(CInt(25)));
+        assert_eq!(eval(expr, &env, &func_env), Ok(CInt(25)));
     }
 
     #[test]
     fn eval_nested_expressions() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let expr = Add(
             Box::new(Mul(Box::new(CInt(2)), Box::new(CInt(3)))),
             Box::new(Sub(Box::new(CInt(10)), Box::new(CInt(4)))),
         );
-        assert_eq!(eval(expr, &env), Ok(CInt(12)));
+        assert_eq!(eval(expr, &env, &func_env), Ok(CInt(12)));
     }
 
     #[test]
     fn eval_variable_not_found() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let var_expr = Var(String::from("z"));
 
         assert_eq!(
-            eval(var_expr, &env),
+            eval(var_expr, &env, &func_env),
             Err(String::from("Variable z not found"))
         );
     }
@@ -493,10 +562,11 @@ mod tests {
     #[test]
     fn execute_assignment() {
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)));
 
-        match execute(assign_stmt, env) {
-            Ok(new_env) => assert_eq!(new_env.get("x"), Some(&CInt(42))),
+        match execute(assign_stmt, env, func_env) {
+            Ok((new_env, _)) => assert_eq!(new_env.get("x"), Some(&CInt(42))),
             Err(s) => assert!(false, "{}", s),
         }
     }
@@ -516,6 +586,7 @@ mod tests {
          * 'y' must be 55.
          */
         let env = HashMap::new();
+        let func_env = HashMap::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(10)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
@@ -541,8 +612,8 @@ mod tests {
         let seq2 = Sequence(Box::new(a2), Box::new(while_statement));
         let program = Sequence(Box::new(a1), Box::new(seq2));
 
-        match execute(program, env) {
-            Ok(new_env) => {
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => {
                 assert_eq!(new_env.get("y"), Some(&CInt(55)));
                 assert_eq!(new_env.get("x"), Some(&CInt(0)));
             }
@@ -564,6 +635,7 @@ mod tests {
          * After executing, 'y' should be 1.
          */
         let env = HashMap::new();
+        let func_env = HashMap::new();
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
         let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
@@ -578,8 +650,8 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, env) {
-            Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(1))),
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => assert_eq!(new_env.get("y"), Some(&CInt(1))),
             Err(s) => assert!(false, "{}", s),
         }
     }
@@ -602,6 +674,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let func_env = HashMap::new();
 
         let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
         let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)));
@@ -630,8 +703,8 @@ mod tests {
         let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)));
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
-        match execute(program, env) {
-            Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(2))),
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => assert_eq!(new_env.get("y"), Some(&CInt(2))),
             Err(s) => assert!(false, "{}", s),
         }
     }
@@ -657,6 +730,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(1800)));
         let a3 = Assignment(String::from("z"), Box::new(CInt(0)));
@@ -726,8 +800,8 @@ mod tests {
 
         let program = Sequence(Box::new(seq2), Box::new(while_statement));
 
-        match execute(program, env) {
-            Ok(new_env) => {
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(43)));
                 assert_eq!(new_env.get("z"), Some(&CInt(27)));
             }
@@ -757,6 +831,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let func_env = HashMap::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(16)));
@@ -823,8 +898,8 @@ mod tests {
 
         let program = Sequence(Box::new(seq1), Box::new(while_statement));
 
-        match execute(program, env) {
-            Ok(new_env) => {
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(5)));
                 assert_eq!(new_env.get("y"), Some(&CInt(7)));
                 assert_eq!(new_env.get("a"), Some(&CInt(4)));
@@ -850,6 +925,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let func_env = HashMap::new();
         let a1 = Assignment(String::from("x"), Box::new(CTrue));
         let a2 = Assignment(String::from("y"), Box::new(CInt(1)));
         let a3 = Assignment(String::from("x"), Box::new(CFalse));
@@ -877,8 +953,8 @@ mod tests {
             Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
         );
 
-        match execute(program, env) {
-            Ok(new_env) => {
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => {
                 assert_eq!(new_env.get("x"), Some(&CFalse));
                 assert_eq!(new_env.get("y"), Some(&CInt(1073741824)));
             }
@@ -900,6 +976,7 @@ mod tests {
     //      * After executing, 'y' should be 7 and 'x' should be 0.
     //      */
     //     let env = HashMap::new();
+    //     let func_env = HashMap::new();
 
     //     let a1 = Statement::Assignment(Box::new(String::from("x")), Box::new(CInt(3)));
     //     let a2 = Statement::Assignment(Box::new(String::from("y")), Box::new(CInt(10)));
@@ -923,8 +1000,8 @@ mod tests {
     //         Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
     //     );
 
-    //     match execute(program, env) {
-    //         Ok(new_env) => {
+    //     match execute(program, env, func_env) {
+    //         Ok((new_env, new_func_env)) => {
     //             assert_eq!(new_env.get("y"), Some(&CInt(7)));
     //             assert_eq!(new_env.get("x"), Some(&CInt(0)));
     //         }
@@ -948,6 +1025,7 @@ mod tests {
     //      * After executing, 'y' should be 1.
     //      */
     //     let env = HashMap::new();
+    //     let func_env = HashMap::new();
 
     //     let inner_then_stmt =
     //         Assignment(String::from("y")), Box:new(CInt(1)));
@@ -971,8 +1049,8 @@ mod tests {
     //         Assignment(String::from("x")), Box:new(CInt(10)));
     //     let program = Sequence(Box::new(setup_stmt), Box::new(outer_if_statement));
 
-    //     match execute(&program, env) {
-    //         Ok(new_env) => assert_eq!(new_env.get("y"), Some(&1)),
+    //     match execute(&program, env, func_env) {
+    //         Ok((new_env, new_func_env)) => assert_eq!(new_env.get("y"), Some(&1)),
     //         Err(s) => assert!(false, "{}", s),
     //     }
     // }
@@ -989,6 +1067,7 @@ mod tests {
          * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
          */
         let env = HashMap::new();
+        let func_env = HashMap::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(5)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
@@ -1002,12 +1081,51 @@ mod tests {
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
-        match execute(program, env) {
-            Ok(new_env) => {
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(5)));
                 assert_eq!(new_env.get("y"), Some(&CInt(0)));
                 assert_eq!(new_env.get("z"), Some(&CInt(13)));
             }
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
+
+    #[test]
+    fn func_decl_call() {
+        /*
+         * Test for declaration and call of a function
+         *
+         * > def add(a: TInteger, b: TInteger) -> TInteger:
+         * >    t = a + b
+         * >    return t
+         * >
+         * > sum = add(5, 7)
+         *
+         * After executing, 'sum' should be 12.
+         */
+        let env = Environment::new();
+        let func_env = FuncEnvironment::new();
+
+        let program = Sequence(
+            Box::new(FuncDef(
+                String::from("add"), 
+                Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
+                          return_exp: Var(String::from("t")), 
+                          return_type: TInteger
+                         }
+                )
+            ),
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)]))))
+        );
+
+        match execute(program, env, func_env) {
+            Ok((new_env, _)) => match new_env.get("sum") {
+                Some(CInt(12)) => {}
+                Some(val) => assert!(false, "Expected 12, got {:?}", val),
+                None => assert!(false, "Variable sum not found"),
+            },
             Err(s) => assert!(false, "{}", s),
         }
     }

@@ -1,6 +1,14 @@
 pub type Name = String;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    pub params: Option<Vec<(Name, Type)>>, 
+    pub body: Box<Statement>,  
+    pub return_exp: Expression,
+    pub return_type: Type,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,
@@ -21,6 +29,9 @@ pub enum Expression {
 
     /* variable reference */
     Var(Name),
+
+    /* function call */
+    FuncCall(Name, Vec<Expression>),
 
     /* arithmetic expressions over numbers */
     Add(Box<Expression>, Box<Expression>),
@@ -50,4 +61,5 @@ pub enum Statement {
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
+    FuncDef(Name, Function),
 }
