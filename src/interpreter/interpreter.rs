@@ -15,7 +15,7 @@ pub enum EnvValue {
     Func(Function)
 }
 
-type Environment = HashMap<Name, EnvValue>;
+pub type Environment = HashMap<Name, EnvValue>;
 
 pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     match exp {
@@ -305,7 +305,7 @@ fn call (
 
         if let Some(params) = &func.params {
             if params.len() != args.len() {
-                return Err(format!("{} expected {} arguments, got {}", name, params.len(), args.len()));
+                return Err(format!("'{}' expected {} arguments, got {}", name, params.len(), args.len()));
             }
             
             for (arg, param) in args.iter().zip(params) {
@@ -314,12 +314,12 @@ fn call (
             }
         }
 
-        match execute(*func.body.clone(), local_env, )? {
-            Control::Continue(_) => Err(format!("{} did not return a value", name)),
+        match execute(*func.body.clone(), local_env)? {
+            Control::Continue(_) => Err(format!("'{}' did not return a value", name)),
             Control::Return(value) => Ok(value)
         }
     } else {
-        Err(format!("{} is not defined", name))
+        Err(format!("'{}' is not defined", name))
     }
 }
 
@@ -367,9 +367,33 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
             }
         }
         Statement::FuncDef(name, func) => {
-            let mut new_env = env;
+            let mut new_env = env.clone();
+
+            let mut stmt = *func.body.clone();
+            let mut next_vec = vec![];
+            loop {
+                match stmt {
+                    Statement::Return(_) => break,
+                    Statement::Sequence(stmt1, stmt2) => {
+                        stmt = *stmt1;
+                        next_vec.push(*stmt2);
+                    }
+                    Statement::IfThenElse(_, stmt_then, option_stmt) => {
+                        stmt = *stmt_then;
+                        if let Some(stmt_else) = option_stmt {
+                            next_vec.push(*stmt_else);
+                        }
+                    }
+                    Statement::While(_, stmt_while) => stmt = *stmt_while,
+                    _ => match next_vec.pop() {
+                        Some(next_stmt) => stmt = next_stmt,
+                        None => return Err(format!("'{}' must have a return statement", name))
+                    }
+                }
+            }
+
             new_env.insert(name.clone(), EnvValue::Func(func));
-            Ok(Control::Continue(new_env.clone()))
+            Ok(Control::Continue(new_env))
         }
         Statement::Return(retrn) => {
             let value = eval(*retrn, &env)?;
@@ -1161,10 +1185,74 @@ mod tests {
             Ok(Control::Continue(new_env)) => match new_env.get("fib") {
                 Some(EnvValue::Exp(CInt(34))) => {}
                 Some(val) => assert!(false, "Expected 34, got {:?}", val),
-                None => assert!(false, "Variable sum not found"),
+                None => assert!(false, "Variable fib not found"),
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
+        }
+    }
+
+    #[test]
+    fn func_call_args_error() {
+        /*
+         * Test for declaration and call of a function
+         *
+         * > def add(a: TInteger, b: TInteger) -> TInteger:
+         * >    t = a + b
+         * >    return t
+         * >
+         * > sum = add(5)
+         */
+        let env = Environment::new();
+
+        let program = Sequence(
+            Box::new(FuncDef(
+                String::from("add"), 
+                Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
+                                                  Box::new(Return(Box::new(Var(String::from("t"))))))),  
+                          return_type: TInteger
+                         }
+                )
+            ),
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5)]))))
+        );
+
+        match execute(program, env) {
+            Ok(Control::Continue(_)) => assert!(false),
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert_eq!(s, String::from("'add' expected 2 arguments, got 1")),
+        }
+    }
+
+    #[test]
+    fn func_call_no_return() {
+        /*
+         * Test for declaration and call of a function
+         *
+         * > def add(a: TInteger, b: TInteger) -> TInteger:
+         * >    t = a + b
+         * >
+         * > sum = add(5, 7)
+         */
+        let env = Environment::new();
+
+        let program = Sequence(
+            Box::new(FuncDef(
+                String::from("add"), 
+                Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))),
+                          return_type: TInteger
+                         }
+                )
+            ),
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)]))))
+        );
+
+        match execute(program, env) {
+            Ok(Control::Continue(_)) => assert!(false),
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert_eq!(s, String::from("'add' must have a return statement")),
         }
     }
 }
