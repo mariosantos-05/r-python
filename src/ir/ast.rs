@@ -3,8 +3,7 @@ pub type Name = String;
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub params: Option<Vec<(Name, Type)>>, 
-    pub body: Box<Statement>,  
-    pub return_type: Type,
+    pub body: Box<Statement>
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -56,10 +55,10 @@ pub enum Expression {
 pub enum Statement {
     VarDeclaration(Name),
     ValDeclaration(Name),
-    Assignment(Name, Box<Expression>),
+    Assignment(Name, Box<Expression>, Type),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
-    FuncDef(Name, Function),
-    Return(Box<Expression>)
+    FuncDef(Name, Function, Type),
+    Return(Name, Box<Expression>)
 }

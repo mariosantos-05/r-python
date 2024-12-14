@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::{Expression, Function, Name, Statement};
+use crate::ir::ast::{Expression, Function, Name, Statement, Type};
+use crate::tc::type_checker::{check_expression, check_statement};
 
 type ErrorMessage = String;
 
@@ -11,13 +12,15 @@ pub enum Control {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnvValue {
-    Exp(Expression),
+    Exp(Option<Expression>),
     Func(Function)
 }
 
-pub type Environment = HashMap<Name, EnvValue>;
+pub type Environment = HashMap<Name, (EnvValue, Type)>;
 
 pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    check_expression(exp.clone(), env)?;
+
     match exp {
         Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
         Expression::Sub(lhs, rhs) => sub(*lhs, *rhs, env),
@@ -52,8 +55,10 @@ fn is_constant(exp: Expression) -> bool {
 
 fn lookup(name: String, env: &Environment) -> Result<Expression, ErrorMessage> {
     match env.get(&name) {
-        Some(EnvValue::Exp(value)) => Ok(value.clone()),
-        _ => Err(format!("Variable {} not found", name)),
+        Some((EnvValue::Exp(Some(value)), _)) => {
+            Ok(value.clone())
+        }
+        _ => Err(format!("Variable '{}' not found", name))
     }
 }
 
@@ -295,56 +300,60 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
+/* Function calls */
 fn call (
     name: &Name,
     args: Vec<Expression>,
     env: &Environment,
 ) -> Result<Expression, ErrorMessage> {
-    if let Some(EnvValue::Func(func)) = env.get(name) {
+    if let Some((EnvValue::Func(func), _)) = env.get(name) {
         let mut local_env = env.clone();
 
         if let Some(params) = &func.params {
             if params.len() != args.len() {
                 return Err(format!("'{}' expected {} arguments, got {}", name, params.len(), args.len()));
             }
-            
-            for (arg, param) in args.iter().zip(params) {
-                let value = eval(arg.clone(), &local_env)?;
-                local_env.insert(param.0.clone(), EnvValue::Exp(value));
+
+            for (arg, (param, param_type)) in args.iter().zip(params) {
+                let arg_value = eval(arg.clone(), &local_env)?;
+                local_env.insert(param.to_string(), (EnvValue::Exp(Some(arg_value)), param_type.clone()));
             }
         }
 
         match execute(*func.body.clone(), local_env)? {
-            Control::Continue(_) => Err(format!("'{}' did not return a value", name)),
-            Control::Return(value) => Ok(value)
+            Control::Return(value) => Ok(value),
+            Control::Continue(_) => Err(format!("'{}' must have a return statement", name))
         }
+
     } else {
         Err(format!("'{}' is not defined", name))
     }
 }
 
 pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessage> {
+    let mut new_env = env.clone();
+    check_statement(stmt.clone(), &mut new_env)?;
+
     match stmt {
-        Statement::Assignment(name, exp) => {
-            let value = eval(*exp, &env)?;
-            let mut new_env = env;
-            new_env.insert(name.clone(), EnvValue::Exp(value));
-            Ok(Control::Continue(new_env.clone()))
+        Statement::Assignment(name, exp, kind) => {
+            let value = eval(*exp, &new_env)?;
+            new_env.insert(name.clone(), (EnvValue::Exp(Some(value)), kind));
+            Ok(Control::Continue(new_env))
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
-            let value = eval(*cond, &env)?;
+            let value = eval(*cond, &new_env)?;
             match value {
-                Expression::CTrue => execute(*stmt_then, env),
+                Expression::CTrue => execute(*stmt_then, new_env),
                 Expression::CFalse => match stmt_else {
-                    Some(else_statement) => execute(*else_statement, env),
-                    None => Ok(Control::Continue(env)),
+                    Some(else_statement) => execute(*else_statement, new_env),
+                    None => Ok(Control::Continue(new_env)),
                 },
                 _ => Err(String::from("expecting a boolean value.")),
             }
         }
         Statement::While(cond, stmt) => {
-            let mut value = eval(*cond.clone(), &env)?;
-            let mut new_env = env;
+            let mut value = eval(*cond.clone(), &new_env)?;
+
             while value == Expression::CTrue {
                 let new_stmt = stmt.clone();
                 match execute(*new_stmt, new_env)? {
@@ -359,21 +368,19 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
             Ok(Control::Continue(new_env.clone()))
         }
         Statement::Sequence(s1, s2) => {
-            match execute(*s1, env)? {
+            match execute(*s1, new_env)? {
                 Control::Continue(new_env) => {
                     execute(*s2, new_env)
                 }
                 Control::Return(value) => Ok(Control::Return(value))
             }
         }
-        Statement::FuncDef(name, func) => {
-            let mut new_env = env.clone();
-
+        Statement::FuncDef(name, func, _) => {
             let mut stmt = *func.body.clone();
             let mut next_vec = vec![];
             loop {
                 match stmt {
-                    Statement::Return(_) => break,
+                    Statement::Return(_, _) => break,
                     Statement::Sequence(stmt1, stmt2) => {
                         stmt = *stmt1;
                         next_vec.push(*stmt2);
@@ -392,11 +399,10 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
                 }
             }
 
-            new_env.insert(name.clone(), EnvValue::Func(func));
             Ok(Control::Continue(new_env))
         }
-        Statement::Return(retrn) => {
-            let value = eval(*retrn, &env)?;
+        Statement::Return(_, exp) => {
+            let value = eval(*exp, &new_env)?;
             Ok(Control::Return(value))
         }
         _ => Err(String::from("not implemented yet")),
@@ -539,7 +545,7 @@ mod tests {
 
     #[test]
     fn eval_variable() {
-        let env = HashMap::from([(String::from("x"), EnvValue::Exp(CInt(10))), (String::from("y"), EnvValue::Exp(CInt(20)))]);
+        let env = HashMap::from([(String::from("x"), (EnvValue::Exp(Some(CInt(10))), TInteger)), (String::from("y"), (EnvValue::Exp(Some(CInt(20))), TInteger))]);
         let v1 = Var(String::from("x"));
         let v2 = Var(String::from("y"));
         assert_eq!(eval(v1, &env), Ok(CInt(10)));
@@ -548,7 +554,7 @@ mod tests {
 
     #[test]
     fn eval_expression_with_variables() {
-        let env = HashMap::from([(String::from("a"), EnvValue::Exp(CInt(5))), (String::from("b"), EnvValue::Exp(CInt(3)))]);
+        let env = HashMap::from([(String::from("a"), (EnvValue::Exp(Some(CInt(5))), TInteger)), (String::from("b"), (EnvValue::Exp(Some(CInt(3))), TInteger))]);
         let expr = Mul(
             Box::new(Var(String::from("a"))),
             Box::new(Add(Box::new(Var(String::from("b"))), Box::new(CInt(2)))),
@@ -573,17 +579,17 @@ mod tests {
 
         assert_eq!(
             eval(var_expr, &env),
-            Err(String::from("Variable z not found"))
+            Err(String::from("Variable 'z' not found"))
         );
     }
 
     #[test]
     fn execute_assignment() {
         let env = HashMap::new();
-        let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)));
+        let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)), TInteger);
 
         match execute(assign_stmt, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CInt(42)))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(42))), TInteger))),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -605,18 +611,20 @@ mod tests {
          */
         let env = HashMap::new();
 
-        let a1 = Assignment(String::from("x"), Box::new(CInt(10)));
-        let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
+        let a1 = Assignment(String::from("x"), Box::new(CInt(10)), TInteger);
+        let a2 = Assignment(String::from("y"), Box::new(CInt(0)), TInteger);
         let a3 = Assignment(
             String::from("y"),
             Box::new(Add(
                 Box::new(Var(String::from("y"))),
                 Box::new(Var(String::from("x"))),
             )),
+            TInteger
         );
         let a4 = Assignment(
             String::from("x"),
             Box::new(Sub(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
+            TInteger
         );
 
         let seq1 = Sequence(Box::new(a3), Box::new(a4));
@@ -631,8 +639,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(55))));
-                assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CInt(0))));
+                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(55))), TInteger)));
+                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(0))), TInteger)));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -655,8 +663,8 @@ mod tests {
         let env = HashMap::new();
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
-        let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
-        let else_stmt = Assignment(String::from("y"), Box::new(CInt(0)));
+        let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)), TInteger);
+        let else_stmt = Assignment(String::from("y"), Box::new(CInt(0)), TInteger);
 
         let if_statement = IfThenElse(
             Box::new(condition),
@@ -664,11 +672,11 @@ mod tests {
             Some(Box::new(else_stmt)),
         );
 
-        let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)));
+        let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)), TInteger);
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
         match execute(program, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(1)))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(1))), TInteger))),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -694,19 +702,19 @@ mod tests {
         let env = HashMap::new();
 
         let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
-        let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)));
+        let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)), TInteger);
 
         let second_if_stmt =
             IfThenElse(Box::new(second_condition), Box::new(second_then_stmt), None);
 
-        let else_setup_stmt = Assignment(String::from("y"), Box::new(CInt(2)));
+        let else_setup_stmt = Assignment(String::from("y"), Box::new(CInt(2)), TInteger);
         let else_stmt = Sequence(Box::new(else_setup_stmt), Box::new(second_if_stmt));
 
         let first_condition = EQ(
             Box::new(Var(String::from("x"))),
             Box::new(Var(String::from("y"))),
         );
-        let first_then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
+        let first_then_stmt = Assignment(String::from("y"), Box::new(CInt(1)), TInteger);
 
         let first_if_stmt = IfThenElse(
             Box::new(first_condition),
@@ -714,14 +722,14 @@ mod tests {
             Some(Box::new(else_stmt)),
         );
 
-        let second_assignment = Assignment(String::from("y"), Box::new(CInt(0)));
+        let second_assignment = Assignment(String::from("y"), Box::new(CInt(0)), TInteger);
         let setup_stmt = Sequence(Box::new(second_assignment), Box::new(first_if_stmt));
 
-        let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)));
+        let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)), TInteger);
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
         match execute(program, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(2)))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(2))), TInteger))),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -749,20 +757,23 @@ mod tests {
 
         let env = HashMap::new();
 
-        let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
-        let a2 = Assignment(String::from("y"), Box::new(CInt(1800)));
-        let a3 = Assignment(String::from("z"), Box::new(CInt(0)));
+        let a1 = Assignment(String::from("x"), Box::new(CInt(1)), TInteger);
+        let a2 = Assignment(String::from("y"), Box::new(CInt(1800)), TInteger);
+        let a3 = Assignment(String::from("z"), Box::new(CInt(0)), TInteger);
         let a4 = Assignment(
             String::from("z"),
             Box::new(Add(Box::new(Var(String::from("z"))), Box::new(CInt(1)))),
+            TInteger
         );
         let a5 = Assignment(
             String::from("z"),
             Box::new(Add(Box::new(Var(String::from("z"))), Box::new(CInt(1)))),
+            TInteger
         );
         let a6 = Assignment(
             String::from("x"),
             Box::new(Add(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
+            TInteger
         );
 
         let if_statement1 = IfThenElse(
@@ -820,8 +831,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CInt(43))));
-                assert_eq!(new_env.get("z"), Some(&EnvValue::Exp(CInt(27))));
+                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(43))), TInteger)));
+                assert_eq!(new_env.get("z"), Some(&(EnvValue::Exp(Some(CInt(27))), TInteger)));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -851,10 +862,10 @@ mod tests {
 
         let env = HashMap::new();
 
-        let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
-        let a2 = Assignment(String::from("y"), Box::new(CInt(16)));
-        let a3 = Assignment(String::from("z"), Box::new(CInt(16)));
-        let a4 = Assignment(String::from("a"), Box::new(CInt(0)));
+        let a1 = Assignment(String::from("x"), Box::new(CInt(1)), TInteger);
+        let a2 = Assignment(String::from("y"), Box::new(CInt(16)), TInteger);
+        let a3 = Assignment(String::from("z"), Box::new(CInt(16)), TInteger);
+        let a4 = Assignment(String::from("a"), Box::new(CInt(0)), TInteger);
         let a5 = Assignment(
             String::from("m"),
             Box::new(Div(
@@ -864,15 +875,18 @@ mod tests {
                 )),
                 Box::new(CInt(2)),
             )),
+            TInteger
         );
-        let a6 = Assignment(String::from("a"), Box::new(Var(String::from("m"))));
+        let a6 = Assignment(String::from("a"), Box::new(Var(String::from("m"))), TInteger);
         let a7 = Assignment(
             String::from("x"),
             Box::new(Add(Box::new(Var(String::from("m"))), Box::new(CInt(1)))),
+            TInteger
         );
         let a8 = Assignment(
             String::from("y"),
             Box::new(Sub(Box::new(Var(String::from("m"))), Box::new(CInt(1)))),
+            TInteger
         );
 
         let seq = Sequence(Box::new(a6), Box::new(a7));
@@ -918,9 +932,9 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CInt(5))));
-                assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(7))));
-                assert_eq!(new_env.get("a"), Some(&EnvValue::Exp(CInt(4))));
+                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(5))), TInteger)));
+                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(7))), TInteger)));
+                assert_eq!(new_env.get("a"), Some(&(EnvValue::Exp(Some(CInt(4))), TInteger)));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -945,12 +959,13 @@ mod tests {
 
         let env = HashMap::new();
 
-        let a1 = Assignment(String::from("x"), Box::new(CTrue));
-        let a2 = Assignment(String::from("y"), Box::new(CInt(1)));
-        let a3 = Assignment(String::from("x"), Box::new(CFalse));
+        let a1 = Assignment(String::from("x"), Box::new(CTrue), TBool);
+        let a2 = Assignment(String::from("y"), Box::new(CInt(1)), TInteger);
+        let a3 = Assignment(String::from("x"), Box::new(CFalse), TBool);
         let a4 = Assignment(
             String::from("y"),
             Box::new(Mul(Box::new(Var(String::from("y"))), Box::new(CInt(2)))),
+            TInteger
         );
 
         let if_then_else_statement = IfThenElse(
@@ -974,8 +989,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CFalse)));
-                assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(1073741824))));
+                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CFalse)), TBool)));
+                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(1073741824))), TInteger)));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -1088,23 +1103,24 @@ mod tests {
          */
         let env = HashMap::new();
 
-        let a1 = Assignment(String::from("x"), Box::new(CInt(5)));
-        let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
+        let a1 = Assignment(String::from("x"), Box::new(CInt(5)), TInteger);
+        let a2 = Assignment(String::from("y"), Box::new(CInt(0)), TInteger);
         let a3 = Assignment(
             String::from("z"),
             Box::new(Add(
                 Box::new(Mul(Box::new(CInt(2)), Box::new(Var(String::from("x"))))),
                 Box::new(CInt(3)),
             )),
+            TInteger
         );
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&EnvValue::Exp(CInt(5))));
-                assert_eq!(new_env.get("y"), Some(&EnvValue::Exp(CInt(0))));
-                assert_eq!(new_env.get("z"), Some(&EnvValue::Exp(CInt(13))));
+                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(5))), TInteger)));
+                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(0))), TInteger)));
+                assert_eq!(new_env.get("z"), Some(&(EnvValue::Exp(Some(CInt(13))), TInteger)));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -1130,18 +1146,17 @@ mod tests {
             Box::new(FuncDef(
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
-                                                  Box::new(Return(Box::new(Var(String::from("t"))))))),  
-                          return_type: TInteger
-                         }
-                )
+                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
+                         },
+                TInteger),
             ),
-            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)]))))
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)])), TInteger))
         );
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => match new_env.get("sum") {
-                Some(EnvValue::Exp(CInt(12))) => {}
+                Some((EnvValue::Exp(Some(CInt(12))), TInteger)) => {}
                 Some(val) => assert!(false, "Expected 12, got {:?}", val),
                 None => assert!(false, "Variable sum not found"),
             }
@@ -1153,7 +1168,7 @@ mod tests {
     #[test]
     fn recursive_func() {
         /*
-         * Test for declaration and call of a frecursive function
+         * Test for declaration and call of a recursive function
          *
          * > def fibonacci(n: TInteger) -> TInteger:
          * >    if n <= 2:
@@ -1172,18 +1187,17 @@ mod tests {
                 String::from("fibonacci"), 
                 Function {params: Some(vec![(String::from("n"), TInteger)]), 
                           body: Box::new(IfThenElse(Box::new(LTE(Box::new(Var(String::from("n"))), Box::new(CInt(2)))), 
-                          Box::new(Return(Box::new(Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))))), 
-                          Some(Box::new(Return(Box::new(Add(Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))])), Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(2)))]))))))))),  
-                          return_type: TInteger
-                         }
-                )
+                          Box::new(Return(String::from("fibonacci"), Box::new(Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))))), 
+                          Some(Box::new(Return(String::from("fibonacci"), Box::new(Add(Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))])), Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(2)))])))))))))
+                         },
+                TInteger)
             ),
-            Box::new(Assignment(String::from("fib"), Box::new(FuncCall(String::from("fibonacci"), vec![CInt(10)]))))
+            Box::new(Assignment(String::from("fib"), Box::new(FuncCall(String::from("fibonacci"), vec![CInt(10)])), TInteger))
         );
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => match new_env.get("fib") {
-                Some(EnvValue::Exp(CInt(34))) => {}
+                Some((EnvValue::Exp(Some(CInt(34))), TInteger)) => {}
                 Some(val) => assert!(false, "Expected 34, got {:?}", val),
                 None => assert!(false, "Variable fib not found"),
             }
@@ -1193,9 +1207,9 @@ mod tests {
     }
 
     #[test]
-    fn func_call_args_error() {
+    fn func_call_args_error1() {
         /*
-         * Test for declaration and call of a function
+         * Test for call of a function with not enough arguments
          *
          * > def add(a: TInteger, b: TInteger) -> TInteger:
          * >    t = a + b
@@ -1209,13 +1223,12 @@ mod tests {
             Box::new(FuncDef(
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
-                                                  Box::new(Return(Box::new(Var(String::from("t"))))))),  
-                          return_type: TInteger
-                         }
-                )
+                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
+                         },
+                TInteger)
             ),
-            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5)]))))
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5)])), TInteger))
         );
 
         match execute(program, env) {
@@ -1226,9 +1239,41 @@ mod tests {
     }
 
     #[test]
+    fn func_call_args_error2() {
+        /*
+         * Test for call of a function with too many arguments
+         *
+         * > def add(a: TInteger, b: TInteger) -> TInteger:
+         * >    t = a + b
+         * >    return t
+         * >
+         * > sum = add(5, 7, 10)
+         */
+        let env = Environment::new();
+
+        let program = Sequence(
+            Box::new(FuncDef(
+                String::from("add"), 
+                Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                          body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
+                         },
+                TInteger)
+            ),
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7), CInt(10)])), TInteger))
+        );
+
+        match execute(program, env) {
+            Ok(Control::Continue(_)) => assert!(false),
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert_eq!(s, String::from("'add' expected 2 arguments, got 3")),
+        }
+    }
+
+    #[test]
     fn func_call_no_return() {
         /*
-         * Test for declaration and call of a function
+         * Test for declaration of a function with no return
          *
          * > def add(a: TInteger, b: TInteger) -> TInteger:
          * >    t = a + b
@@ -1241,18 +1286,35 @@ mod tests {
             Box::new(FuncDef(
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))),
-                          return_type: TInteger
-                         }
-                )
+                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger))
+                         },
+                TInteger)
             ),
-            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)]))))
+            Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)])), TInteger))
         );
 
         match execute(program, env) {
             Ok(Control::Continue(_)) => assert!(false),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert_eq!(s, String::from("'add' must have a return statement")),
+        }
+    }
+
+    #[test]
+    fn undefined_func_call() {
+        /*
+         * Test for call of an undefined function
+         *
+         * > sum = add(5, 7)
+         */
+        let env = Environment::new();
+
+        let program = Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)])), TInteger);
+
+        match execute(program, env) {
+            Ok(Control::Continue(_)) => assert!(false),
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert_eq!(s, String::from("'add' is not defined")),
         }
     }
 }
