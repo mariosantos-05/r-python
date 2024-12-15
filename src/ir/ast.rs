@@ -5,20 +5,20 @@ pub type Name = String;
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnvValue {
     Exp(Expression),
-    Func(Function)
+    Func(Function),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Variable {
     pub value: Option<EnvValue>,
-    pub kind: Type
+    pub kind: Type,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
-    pub params: Option<Vec<(Name, Type)>>, 
+    pub params: Option<Vec<(Name, Type)>>,
     pub body: Box<Statement>,
-    pub return_type: Type
+    pub return_type: Type,
 }
 
 pub type Environment = HashMap<Name, Variable>;
@@ -78,5 +78,5 @@ pub enum Statement {
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Name, Function, Type),
-    Return(Name, Box<Expression>)
+    Return(Name, Box<Expression>),
 }
