@@ -1,10 +1,27 @@
+use std::collections::HashMap;
+
 pub type Name = String;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EnvValue {
+    Exp(Expression),
+    Func(Function)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Variable {
+    pub value: Option<EnvValue>,
+    pub kind: Type
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub params: Option<Vec<(Name, Type)>>, 
-    pub body: Box<Statement>
+    pub body: Box<Statement>,
+    pub return_type: Type
 }
+
+pub type Environment = HashMap<Name, Variable>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
@@ -12,6 +29,7 @@ pub enum Type {
     TBool,
     TReal,
     TString,
+    TFunction,
     TList(Box<Type>),
     TTuple(Vec<Type>),
 }

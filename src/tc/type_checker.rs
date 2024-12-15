@@ -1,8 +1,4 @@
-use crate::interpreter::interpreter::{EnvValue, Environment};
-use crate::ir::ast::Expression;
-use crate::ir::ast::Statement;
-use crate::ir::ast::Name;
-use crate::ir::ast::Type;
+use crate::ir::ast::*;
 
 type ErrorMessage = String;
 
@@ -41,13 +37,13 @@ pub fn check_statement(stmt: Statement, env: &mut Environment) -> Result<(), Err
             }
 
             match env.get(&name) {
-                Some((_, var_type)) => {
-                    if exp_type != *var_type {
-                        return Err(format!("[Type Error] '{}' is already defined as type {:?}, cannot assign new type {:?}", name, var_type, exp_type))
+                Some(var) =>  {
+                    if exp_type != var.kind {
+                        return Err(format!("[Type Error] '{}' is already assigned as type {:?}, cannot assign new type {:?}", name, var.kind, exp_type))
                     }
                 }
                 None => {
-                    env.insert(name, (EnvValue::Exp(None), kind));
+                    env.insert(name, Variable { value: None, kind });
                 }
             }
 
@@ -85,11 +81,11 @@ pub fn check_statement(stmt: Statement, env: &mut Environment) -> Result<(), Err
             Ok(())
         }
         Statement::FuncDef(name, func, func_type) => {
-            env.insert(name, (EnvValue::Func(func.clone()), func_type));
+            env.insert(name, Variable { value: Some(EnvValue::Func(func.clone())), kind: func_type });
 
             if let Some(params) = func.clone().params {
                 for (param, param_type) in params {
-                    env.insert(param, (EnvValue::Exp(None), param_type));
+                    env.insert(param, Variable { value: None, kind: param_type });
                 }
             }
 
@@ -99,10 +95,19 @@ pub fn check_statement(stmt: Statement, env: &mut Environment) -> Result<(), Err
         }
         Statement::Return(name, exp) => {
             let exp_type = check_expression(*exp, env)?;
-            if let Some((_, func_type)) = env.get(&name) {
-                if exp_type != *func_type {
-                    return Err(format!("[Type Error] '{}' expected to return {:?}, got {:?}", name, func_type, exp_type))
+            match env.get(&name) {
+                Some(var) => {
+                    match &var.value {
+                        Some(EnvValue::Exp(_)) => return Err(format!("Return statement doesn't reference a function '{}'", name)),
+                        Some(EnvValue::Func(func)) => {
+                            if exp_type != func.return_type {
+                                return Err(format!("[Type Error] '{}' expected to return {:?}, got {:?}", name, func.return_type, exp_type))
+                            }
+                        }
+                        None => return Err(format!("Variable '{}' has not been evaluated", name))
+                    }
                 }
+                None => return Err(format!("'{}' is not defined", name))
             }
 
             Ok(())
@@ -113,10 +118,10 @@ pub fn check_statement(stmt: Statement, env: &mut Environment) -> Result<(), Err
 
 fn lookup(name: String, env: &Environment) -> Result<Type, ErrorMessage> {
     match env.get(&name) {
-        Some((_, var_type)) => {
-            Ok(var_type.clone())
+        Some(var) => {
+            return Ok(var.kind.clone())
         }
-        _ => Err(format!("Variable '{}' not found", name)),
+        None => return Err(format!("Variable '{}' not found", name))
     }
 }
 
@@ -183,19 +188,24 @@ fn check_func_call_expression (
     env: &Environment
 ) -> Result<Type, ErrorMessage> {
     match env.get(&name) {
-        Some((EnvValue::Func(func), func_type)) => {
-            if let Some(params) = &func.params {
-                for (arg, (param, param_type)) in args.iter().zip(params) {
-                    let arg_type = check_expression(arg.clone(), env)?;
-                    if arg_type != *param_type {
-                        return Err(format!("[Type Error] '{}' param '{}' expected type {:?}, got {:?}", name, param, param_type, arg_type))
+        Some(var) => {
+            match &var.value {
+                Some(EnvValue::Exp(_)) => return Err(format!("Non-function object '{}' is not callable", name)),
+                Some(EnvValue::Func(func)) => {
+                    if let Some(params) = &func.params {
+                        for (arg, (param, param_type)) in args.iter().zip(params) {
+                            let arg_type = check_expression(arg.clone(), env)?;
+                            if arg_type != *param_type {
+                                return Err(format!("[Type Error] '{}' param '{}' expected type {:?}, got {:?}", name, param, param_type, arg_type))
+                            }
+                        }
                     }
+                    return Ok(func.return_type.clone())
                 }
+                None => return Err(format!("Variable '{}' has not been evaluated", name))
             }
-
-            Ok(func_type.clone())
         }
-        _ => Err(format!("'{}' is not defined", name))
+        None => return Err(format!("'{}' is not defined", name))
     }
 }
 
@@ -205,7 +215,7 @@ mod tests {
 
     use super::*;
     
-    use crate::ir::ast::{Expression::*, Type::*, Statement, Function};
+    use crate::{interpreter::interpreter::{execute, Control}, ir::ast::{Expression::*, Function, Statement::*, Type::*}};
 
     #[test]
     fn check_tlist_comparison() {
@@ -339,13 +349,14 @@ mod tests {
 
     #[test]
     fn check_func_call() {
-        let mut env = Environment::new();
-        env.insert(
-            "add".to_string(),
-            (EnvValue::Func(Function {
-                                params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b")))))))}),
-            TInteger)
+        let env = Environment::new();
+        let func = FuncDef(
+            String::from("add"), 
+            Function { 
+                params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
+                return_type: TInteger }, 
+            TFunction
         );
 
         let call = Expression::FuncCall(
@@ -353,22 +364,26 @@ mod tests {
             vec![Expression::CInt(1), Expression::CInt(2)],
         );
 
-        let result = check_expression(call, &env);
-        assert_eq!(
-            result, 
-            Ok(Type::TInteger)
-        );
+        match execute(func, env) {
+            Ok(Control::Continue(new_env)) => {
+                let result = check_expression(call, &new_env);
+                assert_eq!(result, Ok(TInteger))
+            }
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert!(false, "{}", s)
+        }
     }
 
     #[test]
     fn check_func_call_wrong_arg_type() {
-        let mut env = Environment::new();
-        env.insert(
-            "add".to_string(),
-            (EnvValue::Func(Function {
-                                params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b")))))))}),
-            TInteger)
+        let env = Environment::new();
+        let func = FuncDef(
+            String::from("add"), 
+            Function { 
+                params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))))), 
+                return_type: TInteger }, 
+            TFunction
         );
 
         let call = Expression::FuncCall(
@@ -376,30 +391,32 @@ mod tests {
             vec![Expression::CInt(1), Expression::CReal(2.0)],
         );
 
-        let result = check_expression(call, &env);
-        assert_eq!(
-            result, 
-            Err(String::from("[Type Error] 'add' param 'b' expected type TInteger, got TReal"))
-        );
+        match execute(func, env) {
+            Ok(Control::Continue(new_env)) => {
+                let result = check_expression(call, &new_env);
+                assert_eq!(result, Err(String::from("[Type Error] 'add' param 'b' expected type TInteger, got TReal")))
+            }
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert!(false, "{}", s)
+        }
     }
 
     #[test]
     fn check_func_call_wrong_result_type() {
-        let mut env = Environment::new();
-
-        let func = Statement::FuncDef
-            (String::from("add"), 
-            Function {
+        let env = Environment::new();
+        let func = FuncDef(
+            String::from("add"), 
+            Function { 
                 params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(CReal(2.0))))))
-            }, 
-            TInteger
+                body: Box::new(Statement::Return(String::from("add"), Box::new(Expression::Add(Box::new(Var(String::from("a"))), Box::new(CReal(2.0)))))), 
+                return_type: TInteger }, 
+            TFunction
         );
 
-        let result = check_statement(func, &mut env);
-        assert_eq!(
-            result, 
-            Err(String::from("[Type Error] 'add' expected to return TInteger, got TReal"))
-        );
+        match execute(func, env) {
+            Ok(Control::Continue(_)) => assert!(false),
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert_eq!(s, String::from("[Type Error] 'add' expected to return TInteger, got TReal"))
+        }
     }
 }

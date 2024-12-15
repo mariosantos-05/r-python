@@ -1,24 +1,20 @@
-use std::collections::HashMap;
-
-use crate::ir::ast::{Expression, Function, Name, Statement, Type};
+use crate::ir::ast::*;
 use crate::tc::type_checker::{check_expression, check_statement};
 
 type ErrorMessage = String;
 
-pub enum Control {
-    Continue(Environment),
-    Return(Expression)
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum EnvValue {
-    Exp(Option<Expression>),
+#[derive(Debug, PartialEq)]
+pub enum EvalResult {
+    Exp(Expression),
     Func(Function)
 }
 
-pub type Environment = HashMap<Name, (EnvValue, Type)>;
+pub enum Control {
+    Continue(Environment),
+    Return(EvalResult)
+}
 
-pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+pub fn eval(exp: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     check_expression(exp.clone(), env)?;
 
     match exp {
@@ -37,7 +33,7 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
         Expression::FuncCall(name, args) => call(&name, args, env),
-        _ if is_constant(exp.clone()) => Ok(exp),
+        _ if is_constant(exp.clone()) => Ok(EvalResult::Exp(exp)),
         _ => Err(String::from("Not implemented yet.")),
     }
 }
@@ -53,10 +49,14 @@ fn is_constant(exp: Expression) -> bool {
     }
 }
 
-fn lookup(name: String, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn lookup(name: String, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     match env.get(&name) {
-        Some((EnvValue::Exp(Some(value)), _)) => {
-            Ok(value.clone())
+        Some(var) => {
+            match &var.value {
+                Some(EnvValue::Exp(value)) => return Ok(EvalResult::Exp(value.clone())),
+                Some(EnvValue::Func(func)) => return Ok(EvalResult::Func(func.clone())),
+                None => return Err(format!("Variable '{}' has not been evaluated", name))
+            }
         }
         _ => Err(format!("Variable '{}' not found", name))
     }
@@ -69,24 +69,24 @@ fn eval_binary_arith_op<F>(
     env: &Environment,
     op: F,
     error_msg: &str,
-) -> Result<Expression, ErrorMessage>
+) -> Result<EvalResult, ErrorMessage>
 where
     F: Fn(f64, f64) -> f64,
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (Expression::CInt(v1), Expression::CInt(v2)) => {
-            Ok(Expression::CInt(op(v1 as f64, v2 as f64) as i32))
+        (EvalResult::Exp(Expression::CInt(v1)), EvalResult::Exp(Expression::CInt(v2))) => {
+            Ok(EvalResult::Exp(Expression::CInt(op(v1 as f64, v2 as f64) as i32)))
         }
-        (Expression::CInt(v1), Expression::CReal(v2)) => Ok(Expression::CReal(op(v1 as f64, v2))),
-        (Expression::CReal(v1), Expression::CInt(v2)) => Ok(Expression::CReal(op(v1, v2 as f64))),
-        (Expression::CReal(v1), Expression::CReal(v2)) => Ok(Expression::CReal(op(v1, v2))),
+        (EvalResult::Exp(Expression::CInt(v1)), EvalResult::Exp(Expression::CReal(v2))) => Ok(EvalResult::Exp(Expression::CReal(op(v1 as f64, v2)))),
+        (EvalResult::Exp(Expression::CReal(v1)), EvalResult::Exp(Expression::CInt(v2))) => Ok(EvalResult::Exp(Expression::CReal(op(v1, v2 as f64)))),
+        (EvalResult::Exp(Expression::CReal(v1)), EvalResult::Exp(Expression::CReal(v2))) => Ok(EvalResult::Exp(Expression::CReal(op(v1, v2)))),
         _ => Err(error_msg.to_string()),
     }
 }
 
-fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -96,7 +96,7 @@ fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -106,7 +106,7 @@ fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -116,7 +116,7 @@ fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -126,7 +126,7 @@ fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn rmd(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn rmd(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -142,22 +142,22 @@ fn eval_binary_boolean_op<F>(
     env: &Environment,
     op: F,
     error_msg: &str,
-) -> Result<Expression, ErrorMessage>
+) -> Result<EvalResult, ErrorMessage>
 where
     F: Fn(bool, bool) -> Expression,
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (Expression::CTrue, Expression::CTrue) => Ok(op(true, true)),
-        (Expression::CTrue, Expression::CFalse) => Ok(op(true, false)),
-        (Expression::CFalse, Expression::CTrue) => Ok(op(false, true)),
-        (Expression::CFalse, Expression::CFalse) => Ok(op(false, false)),
+        (EvalResult::Exp(Expression::CTrue), EvalResult::Exp(Expression::CTrue)) => Ok(EvalResult::Exp(op(true, true))),
+        (EvalResult::Exp(Expression::CTrue), EvalResult::Exp(Expression::CFalse)) => Ok(EvalResult::Exp(op(true, false))),
+        (EvalResult::Exp(Expression::CFalse), EvalResult::Exp(Expression::CTrue)) => Ok(EvalResult::Exp(op(false, true))),
+        (EvalResult::Exp(Expression::CFalse), EvalResult::Exp(Expression::CFalse)) => Ok(EvalResult::Exp(op(false, false))),
         _ => Err(error_msg.to_string()),
     }
 }
 
-fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -173,7 +173,7 @@ fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -189,11 +189,11 @@ fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn not(lhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn not(lhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     let v = eval(lhs, env)?;
     match v {
-        Expression::CTrue => Ok(Expression::CFalse),
-        Expression::CFalse => Ok(Expression::CTrue),
+        EvalResult::Exp(Expression::CTrue) => Ok(EvalResult::Exp(Expression::CFalse)),
+        EvalResult::Exp(Expression::CFalse) => Ok(EvalResult::Exp(Expression::CTrue)),
         _ => Err(String::from("'not' is only defined for booleans.")),
     }
 }
@@ -205,22 +205,22 @@ fn eval_binary_rel_op<F>(
     env: &Environment,
     op: F,
     error_msg: &str,
-) -> Result<Expression, ErrorMessage>
+) -> Result<EvalResult, ErrorMessage>
 where
     F: Fn(f64, f64) -> Expression,
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (Expression::CInt(v1), Expression::CInt(v2)) => Ok(op(v1 as f64, v2 as f64)),
-        (Expression::CInt(v1), Expression::CReal(v2)) => Ok(op(v1 as f64, v2)),
-        (Expression::CReal(v1), Expression::CInt(v2)) => Ok(op(v1, v2 as f64)),
-        (Expression::CReal(v1), Expression::CReal(v2)) => Ok(op(v1, v2)),
+        (EvalResult::Exp(Expression::CInt(v1)), EvalResult::Exp(Expression::CInt(v2))) => Ok(EvalResult::Exp(op(v1 as f64, v2 as f64))),
+        (EvalResult::Exp(Expression::CInt(v1)), EvalResult::Exp(Expression::CReal(v2))) => Ok(EvalResult::Exp(op(v1 as f64, v2))),
+        (EvalResult::Exp(Expression::CReal(v1)), EvalResult::Exp(Expression::CInt(v2))) => Ok(EvalResult::Exp(op(v1, v2 as f64))),
+        (EvalResult::Exp(Expression::CReal(v1)), EvalResult::Exp(Expression::CReal(v2))) => Ok(EvalResult::Exp(op(v1, v2))),
         _ => Err(error_msg.to_string()),
     }
 }
 
-fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -236,7 +236,7 @@ fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -252,7 +252,7 @@ fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -268,7 +268,7 @@ fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression,
     )
 }
 
-fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -284,7 +284,7 @@ fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EvalResult, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -305,24 +305,33 @@ fn call (
     name: &Name,
     args: Vec<Expression>,
     env: &Environment,
-) -> Result<Expression, ErrorMessage> {
-    if let Some((EnvValue::Func(func), _)) = env.get(name) {
+) -> Result<EvalResult, ErrorMessage> {
+    if let Some(var) = env.get(name) {
         let mut local_env = env.clone();
 
-        if let Some(params) = &func.params {
-            if params.len() != args.len() {
-                return Err(format!("'{}' expected {} arguments, got {}", name, params.len(), args.len()));
+        match &var.value {
+            Some(EnvValue::Exp(_)) => return Err(format!("Non-function object '{}' is not callable", name)),
+            Some(EnvValue::Func(func)) => {
+                if let Some(params) = &func.params {
+                    if params.len() != args.len() {
+                        return Err(format!("'{}' expected {} arguments, got {}", name, params.len(), args.len()));
+                    }
+        
+                    for (arg, (param, param_type)) in args.iter().zip(params) {
+                        let arg_value = eval(arg.clone(), &local_env)?;
+                        match arg_value {
+                            EvalResult::Exp(exp) => local_env.insert(param.to_string(), Variable { value: Some(EnvValue::Exp(exp)), kind: param_type.clone() }),
+                            EvalResult::Func(func) => local_env.insert(param.to_string(), Variable { value: Some(EnvValue::Func(func)), kind: param_type.clone() })
+                        };
+                    }
+                }
+        
+                match execute(*func.body.clone(), local_env)? {
+                    Control::Return(value) => Ok(value),
+                    Control::Continue(_) => Err(format!("'{}' must have a return statement", name))
+                }
             }
-
-            for (arg, (param, param_type)) in args.iter().zip(params) {
-                let arg_value = eval(arg.clone(), &local_env)?;
-                local_env.insert(param.to_string(), (EnvValue::Exp(Some(arg_value)), param_type.clone()));
-            }
-        }
-
-        match execute(*func.body.clone(), local_env)? {
-            Control::Return(value) => Ok(value),
-            Control::Continue(_) => Err(format!("'{}' must have a return statement", name))
+            None => return Err(format!("Variable '{}' has not been evaluated", name))
         }
 
     } else {
@@ -337,14 +346,17 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
     match stmt {
         Statement::Assignment(name, exp, kind) => {
             let value = eval(*exp, &new_env)?;
-            new_env.insert(name.clone(), (EnvValue::Exp(Some(value)), kind));
+            match value {
+                EvalResult::Exp(exp) => new_env.insert(name.clone(), Variable { value: Some(EnvValue::Exp(exp)), kind }),
+                EvalResult::Func(func) => new_env.insert(name.clone(), Variable { value: Some(EnvValue::Func(func)), kind })
+            };
             Ok(Control::Continue(new_env))
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
             let value = eval(*cond, &new_env)?;
             match value {
-                Expression::CTrue => execute(*stmt_then, new_env),
-                Expression::CFalse => match stmt_else {
+                EvalResult::Exp(Expression::CTrue) => execute(*stmt_then, new_env),
+                EvalResult::Exp(Expression::CFalse) => match stmt_else {
                     Some(else_statement) => execute(*else_statement, new_env),
                     None => Ok(Control::Continue(new_env)),
                 },
@@ -354,7 +366,7 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
         Statement::While(cond, stmt) => {
             let mut value = eval(*cond.clone(), &new_env)?;
 
-            while value == Expression::CTrue {
+            while value == EvalResult::Exp(Expression::CTrue) {
                 let new_stmt = stmt.clone();
                 match execute(*new_stmt, new_env)? {
                     Control::Continue(result_env) => {
@@ -403,7 +415,10 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
         }
         Statement::Return(_, exp) => {
             let value = eval(*exp, &new_env)?;
-            Ok(Control::Return(value))
+            match value {
+                EvalResult::Exp(exp) => Ok(Control::Return(EvalResult::Exp(exp))),
+                EvalResult::Func(func) => Ok(Control::Return(EvalResult::Func(func)))
+            }
         }
         _ => Err(String::from("not implemented yet")),
     }
@@ -412,10 +427,13 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Control, ErrorMessag
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashMap;
+
     use super::*;
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Statement::*;
     use crate::ir::ast::Type::*;
+    use crate::ir::ast::Variable;
     use approx::relative_eq;
 
     #[test]
@@ -424,8 +442,8 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CInt(20);
 
-        assert_eq!(eval(c10, &env), Ok(CInt(10)));
-        assert_eq!(eval(c20, &env), Ok(CInt(20)));
+        assert_eq!(eval(c10, &env), Ok(EvalResult::Exp(CInt(10))));
+        assert_eq!(eval(c20, &env), Ok(EvalResult::Exp(CInt(20))));
     }
 
     #[test]
@@ -434,7 +452,7 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CInt(20);
         let add1 = Add(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(add1, &env), Ok(CInt(30)));
+        assert_eq!(eval(add1, &env), Ok(EvalResult::Exp(CInt(30))));
     }
 
     #[test]
@@ -445,7 +463,7 @@ mod tests {
         let c30 = CInt(30);
         let add1 = Add(Box::new(c10), Box::new(c20));
         let add2 = Add(Box::new(add1), Box::new(c30));
-        assert_eq!(eval(add2, &env), Ok(CInt(60)));
+        assert_eq!(eval(add2, &env), Ok(EvalResult::Exp(CInt(60))));
     }
 
     #[test]
@@ -454,7 +472,7 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CReal(20.5);
         let add1 = Add(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(add1, &env), Ok(CReal(30.5)));
+        assert_eq!(eval(add1, &env), Ok(EvalResult::Exp(CReal(30.5))));
     }
 
     #[test]
@@ -463,7 +481,7 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CInt(20);
         let sub1 = Sub(Box::new(c20), Box::new(c10));
-        assert_eq!(eval(sub1, &env), Ok(CInt(10)));
+        assert_eq!(eval(sub1, &env), Ok(EvalResult::Exp(CInt(10))));
     }
 
     #[test]
@@ -472,7 +490,7 @@ mod tests {
         let c100 = CInt(100);
         let c200 = CInt(300);
         let sub1 = Sub(Box::new(c200), Box::new(c100));
-        assert_eq!(eval(sub1, &env), Ok(CInt(200)));
+        assert_eq!(eval(sub1, &env), Ok(EvalResult::Exp(CInt(200))));
     }
 
     #[test]
@@ -481,7 +499,7 @@ mod tests {
         let c100 = CReal(100.5);
         let c300 = CInt(300);
         let sub1 = Sub(Box::new(c300), Box::new(c100));
-        assert_eq!(eval(sub1, &env), Ok(CReal(199.5)));
+        assert_eq!(eval(sub1, &env), Ok(EvalResult::Exp(CReal(199.5))));
     }
 
     #[test]
@@ -490,7 +508,7 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(mul1, &env), Ok(CInt(200)));
+        assert_eq!(eval(mul1, &env), Ok(EvalResult::Exp(CInt(200))));
     }
 
     #[test]
@@ -499,7 +517,7 @@ mod tests {
         let c10 = CReal(10.5);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
-        assert_eq!(eval(mul1, &env), Ok(CReal(210.0)));
+        assert_eq!(eval(mul1, &env), Ok(EvalResult::Exp(CReal(210.0))));
     }
 
     #[test]
@@ -508,7 +526,7 @@ mod tests {
         let c10 = CInt(10);
         let c20 = CInt(20);
         let div1 = Div(Box::new(c20), Box::new(c10));
-        assert_eq!(eval(div1, &env), Ok(CInt(2)));
+        assert_eq!(eval(div1, &env), Ok(EvalResult::Exp(CInt(2))));
     }
 
     #[test]
@@ -517,7 +535,7 @@ mod tests {
         let c10 = CInt(10);
         let c3 = CInt(3);
         let div1 = Div(Box::new(c10), Box::new(c3));
-        assert_eq!(eval(div1, &env), Ok(CInt(3)));
+        assert_eq!(eval(div1, &env), Ok(EvalResult::Exp(CInt(3))));
     }
 
     #[test]
@@ -526,7 +544,7 @@ mod tests {
         let c3 = CInt(3);
         let c21 = CInt(21);
         let div1 = Div(Box::new(c21), Box::new(c3));
-        assert_eq!(eval(div1, &env), Ok(CInt(7)));
+        assert_eq!(eval(div1, &env), Ok(EvalResult::Exp(CInt(7))));
     }
 
     #[test]
@@ -537,7 +555,7 @@ mod tests {
         let div1 = Div(Box::new(c10), Box::new(c3));
         let res = eval(div1, &env);
         match res {
-            Ok(CReal(v)) => assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON)),
+            Ok(EvalResult::Exp(CReal(v))) => assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON)),
             Err(msg) => assert!(false, "{}", msg),
             _ => assert!(false, "Not expected."),
         }
@@ -545,21 +563,21 @@ mod tests {
 
     #[test]
     fn eval_variable() {
-        let env = HashMap::from([(String::from("x"), (EnvValue::Exp(Some(CInt(10))), TInteger)), (String::from("y"), (EnvValue::Exp(Some(CInt(20))), TInteger))]);
+        let env = HashMap::from([(String::from("x"), Variable { value: Some(EnvValue::Exp(CInt(10))), kind: TInteger}), (String::from("y"), Variable { value: Some(EnvValue::Exp(CInt(20))), kind: TInteger})]);
         let v1 = Var(String::from("x"));
         let v2 = Var(String::from("y"));
-        assert_eq!(eval(v1, &env), Ok(CInt(10)));
-        assert_eq!(eval(v2, &env), Ok(CInt(20)));
+        assert_eq!(eval(v1, &env), Ok(EvalResult::Exp(CInt(10))));
+        assert_eq!(eval(v2, &env), Ok(EvalResult::Exp(CInt(20))));
     }
 
     #[test]
     fn eval_expression_with_variables() {
-        let env = HashMap::from([(String::from("a"), (EnvValue::Exp(Some(CInt(5))), TInteger)), (String::from("b"), (EnvValue::Exp(Some(CInt(3))), TInteger))]);
+        let env = HashMap::from([(String::from("a"), Variable { value: Some(EnvValue::Exp(CInt(5))), kind: TInteger}), (String::from("b"), Variable { value: Some(EnvValue::Exp(CInt(3))), kind: TInteger})]);
         let expr = Mul(
             Box::new(Var(String::from("a"))),
             Box::new(Add(Box::new(Var(String::from("b"))), Box::new(CInt(2)))),
         );
-        assert_eq!(eval(expr, &env), Ok(CInt(25)));
+        assert_eq!(eval(expr, &env), Ok(EvalResult::Exp(CInt(25))));
     }
 
     #[test]
@@ -569,7 +587,7 @@ mod tests {
             Box::new(Mul(Box::new(CInt(2)), Box::new(CInt(3)))),
             Box::new(Sub(Box::new(CInt(10)), Box::new(CInt(4)))),
         );
-        assert_eq!(eval(expr, &env), Ok(CInt(12)));
+        assert_eq!(eval(expr, &env), Ok(EvalResult::Exp(CInt(12))));
     }
 
     #[test]
@@ -589,7 +607,7 @@ mod tests {
         let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)), TInteger);
 
         match execute(assign_stmt, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(42))), TInteger))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CInt(42))), kind: TInteger })),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -639,8 +657,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(55))), TInteger)));
-                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(0))), TInteger)));
+                assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(55))), kind: TInteger }));
+                assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CInt(0))), kind: TInteger }));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -676,7 +694,7 @@ mod tests {
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
         match execute(program, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(1))), TInteger))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(1))), kind: TInteger })),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -729,7 +747,7 @@ mod tests {
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
         match execute(program, env) {
-            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(2))), TInteger))),
+            Ok(Control::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(2))), kind: TInteger })),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -831,8 +849,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(43))), TInteger)));
-                assert_eq!(new_env.get("z"), Some(&(EnvValue::Exp(Some(CInt(27))), TInteger)));
+                assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CInt(43))), kind: TInteger }));
+                assert_eq!(new_env.get("z"), Some(&Variable { value: Some(EnvValue::Exp(CInt(27))), kind: TInteger }));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -932,9 +950,9 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(5))), TInteger)));
-                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(7))), TInteger)));
-                assert_eq!(new_env.get("a"), Some(&(EnvValue::Exp(Some(CInt(4))), TInteger)));
+                assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CInt(5))), kind: TInteger }));
+                assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(7))), kind: TInteger }));
+                assert_eq!(new_env.get("a"), Some(&Variable { value: Some(EnvValue::Exp(CInt(4))), kind: TInteger }));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -989,8 +1007,8 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CFalse)), TBool)));
-                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(1073741824))), TInteger)));
+                assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CFalse)), kind: TBool }));
+                assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(1073741824))), kind: TInteger }));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -1118,9 +1136,9 @@ mod tests {
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&(EnvValue::Exp(Some(CInt(5))), TInteger)));
-                assert_eq!(new_env.get("y"), Some(&(EnvValue::Exp(Some(CInt(0))), TInteger)));
-                assert_eq!(new_env.get("z"), Some(&(EnvValue::Exp(Some(CInt(13))), TInteger)));
+                assert_eq!(new_env.get("x"), Some(&Variable { value: Some(EnvValue::Exp(CInt(5))), kind: TInteger }));
+                assert_eq!(new_env.get("y"), Some(&Variable { value: Some(EnvValue::Exp(CInt(0))), kind: TInteger }));
+                assert_eq!(new_env.get("z"), Some(&Variable { value: Some(EnvValue::Exp(CInt(13))), kind: TInteger }));
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -1136,7 +1154,7 @@ mod tests {
          * >    t = a + b
          * >    return t
          * >
-         * > sum = add(5, 7)
+         * > sum: TInteger = add(5, 7)
          *
          * After executing, 'sum' should be 12.
          */
@@ -1147,17 +1165,19 @@ mod tests {
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
                           body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
-                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
-                         },
-                TInteger),
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t"))))))),
+                          return_type: TInteger
+                        },
+                TFunction),
             ),
             Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)])), TInteger))
         );
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => match new_env.get("sum") {
-                Some((EnvValue::Exp(Some(CInt(12))), TInteger)) => {}
-                Some(val) => assert!(false, "Expected 12, got {:?}", val),
+                Some(var) => {
+                    assert_eq!(var, &Variable { value: Some(EnvValue::Exp(CInt(12))), kind: TInteger })
+                }
                 None => assert!(false, "Variable sum not found"),
             }
             Ok(Control::Return(_)) => assert!(false),
@@ -1176,7 +1196,7 @@ mod tests {
          * >    else:
          * >        return fib(n-1) + fib(n-2)
          * >
-         * > fib = fibonacci(10)
+         * > fib: TInteger = fibonacci(10)
          *
          * After executing, 'fib' should be 34.
          */
@@ -1188,18 +1208,20 @@ mod tests {
                 Function {params: Some(vec![(String::from("n"), TInteger)]), 
                           body: Box::new(IfThenElse(Box::new(LTE(Box::new(Var(String::from("n"))), Box::new(CInt(2)))), 
                           Box::new(Return(String::from("fibonacci"), Box::new(Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))))), 
-                          Some(Box::new(Return(String::from("fibonacci"), Box::new(Add(Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))])), Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(2)))])))))))))
+                          Some(Box::new(Return(String::from("fibonacci"), Box::new(Add(Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(1)))])), Box::new(FuncCall(String::from("fibonacci"), vec![Sub(Box::new(Var(String::from("n"))), Box::new(CInt(2)))]))))))))),
+                          return_type: TInteger
                          },
-                TInteger)
+                TFunction)
             ),
             Box::new(Assignment(String::from("fib"), Box::new(FuncCall(String::from("fibonacci"), vec![CInt(10)])), TInteger))
         );
 
         match execute(program, env) {
             Ok(Control::Continue(new_env)) => match new_env.get("fib") {
-                Some((EnvValue::Exp(Some(CInt(34))), TInteger)) => {}
-                Some(val) => assert!(false, "Expected 34, got {:?}", val),
-                None => assert!(false, "Variable fib not found"),
+                Some(var) => {
+                    assert_eq!(var, &Variable { value: Some(EnvValue::Exp(CInt(34))), kind: TInteger })
+                }
+                None => assert!(false, "Variable sum not found"),
             }
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -1215,7 +1237,7 @@ mod tests {
          * >    t = a + b
          * >    return t
          * >
-         * > sum = add(5)
+         * > sum: TInteger = add(5)
          */
         let env = Environment::new();
 
@@ -1224,9 +1246,9 @@ mod tests {
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
                           body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
-                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
-                         },
-                TInteger)
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t"))))))),
+                          return_type: TInteger},
+                TFunction)
             ),
             Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5)])), TInteger))
         );
@@ -1247,7 +1269,7 @@ mod tests {
          * >    t = a + b
          * >    return t
          * >
-         * > sum = add(5, 7, 10)
+         * > sum: TInteger = add(5, 7, 10)
          */
         let env = Environment::new();
 
@@ -1256,9 +1278,9 @@ mod tests {
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
                           body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
-                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t")))))))
-                         },
-                TInteger)
+                                                  Box::new(Return(String::from("add"), Box::new(Var(String::from("t"))))))),
+                          return_type: TInteger},
+                TFunction)
             ),
             Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7), CInt(10)])), TInteger))
         );
@@ -1278,7 +1300,7 @@ mod tests {
          * > def add(a: TInteger, b: TInteger) -> TInteger:
          * >    t = a + b
          * >
-         * > sum = add(5, 7)
+         * > sum: TInteger = add(5, 7)
          */
         let env = Environment::new();
 
@@ -1286,9 +1308,9 @@ mod tests {
             Box::new(FuncDef(
                 String::from("add"), 
                 Function {params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
-                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger))
-                         },
-                TInteger)
+                          body: Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)),
+                          return_type: TInteger},
+                TFunction)
             ),
             Box::new(Assignment(String::from("sum"), Box::new(FuncCall(String::from("add"), vec![CInt(5), CInt(7)])), TInteger))
         );
@@ -1305,7 +1327,7 @@ mod tests {
         /*
          * Test for call of an undefined function
          *
-         * > sum = add(5, 7)
+         * > sum: TInteger = add(5, 7)
          */
         let env = Environment::new();
 
@@ -1315,6 +1337,48 @@ mod tests {
             Ok(Control::Continue(_)) => assert!(false),
             Ok(Control::Return(_)) => assert!(false),
             Err(s) => assert_eq!(s, String::from("'add' is not defined")),
+        }
+    }
+    
+    #[test]
+    fn variable_function_assignment() {
+        /*
+         * Test for assignment of a variable to a function
+         *
+         * > def add(a: TInteger, b: TInteger) -> TInteger:
+         * >    t = a + b
+         * >    return t
+         * >
+         * > sum: TFunction = add
+         *
+         * After executing, 'sum' should be a 'copy' of add.
+         */
+        let env = Environment::new();
+        let func = Function {
+            params: Some(vec![(String::from("a"), TInteger), (String::from("b"), TInteger)]), 
+            body: Box::new(Sequence(Box::new(Assignment(String::from("t"), Box::new(Add(Box::new(Var(String::from("a"))), Box::new(Var(String::from("b"))))), TInteger)), 
+                                Box::new(Return(String::from("add"), Box::new(Var(String::from("t"))))))),
+            return_type: TInteger
+        };
+
+        let program = Sequence(
+            Box::new(FuncDef(
+                String::from("add"), 
+                func.clone(),
+                TFunction),
+            ),
+            Box::new(Assignment(String::from("sum"), Box::new(Var(String::from("add"))), TFunction))
+        );
+
+        match execute(program, env) {
+            Ok(Control::Continue(new_env)) => match new_env.get("sum") {
+                Some(var) => {
+                    assert_eq!(var, &Variable { value: Some(EnvValue::Func(func)), kind: TFunction })
+                }
+                None => assert!(false, "Variable sum not found"),
+            }
+            Ok(Control::Return(_)) => assert!(false),
+            Err(s) => assert!(false, "{}", s),
         }
     }
 }
