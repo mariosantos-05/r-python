@@ -1,29 +1,23 @@
-use std::collections::HashMap;
-
 pub type Name = String;
 
-#[derive(Debug, Clone, PartialEq)]
+use std::collections::HashMap;
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum EnvValue {
     Exp(Expression),
-    Func(Function),
+    Func(Function)
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Variable {
-    pub value: Option<EnvValue>,
-    pub kind: Type,
-}
+pub type Environment = HashMap<Name, (Option<EnvValue>, Type)>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
+    pub kind: Type,
     pub params: Option<Vec<(Name, Type)>>,
-    pub body: Box<Statement>,
-    pub return_type: Type,
+    pub body: Box<Statement>
 }
 
-pub type Environment = HashMap<Name, Variable>;
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     TInteger,
     TBool,
@@ -54,7 +48,6 @@ pub enum Expression {
     Sub(Box<Expression>, Box<Expression>),
     Mul(Box<Expression>, Box<Expression>),
     Div(Box<Expression>, Box<Expression>),
-    Rmd(Box<Expression>, Box<Expression>),
 
     /* boolean expressions over booleans */
     And(Box<Expression>, Box<Expression>),
@@ -73,10 +66,10 @@ pub enum Expression {
 pub enum Statement {
     VarDeclaration(Name),
     ValDeclaration(Name),
-    Assignment(Name, Box<Expression>, Type),
+    Assignment(Name, Box<Expression>, Option<Type>),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
-    FuncDef(Name, Function, Type),
-    Return(Name, Box<Expression>),
+    FuncDef(Name, Function),
+    Return(Box<Expression>)
 }
