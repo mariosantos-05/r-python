@@ -1,11 +1,11 @@
-use crate::ir::ast::{Expression, Name, Statement, Environment, EnvValue};
-use crate::tc::type_checker::{ControlType, check_stmt};
+use crate::ir::ast::{EnvValue, Environment, Expression, Name, Statement};
+use crate::tc::type_checker::{check_stmt, ControlType};
 
 type ErrorMessage = String;
 
 pub enum ControlFlow {
     Continue(Environment),
-    Return(EnvValue)
+    Return(EnvValue),
 }
 
 pub fn eval(exp: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
@@ -29,13 +29,17 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage
     }
 }
 
-pub fn execute(stmt: Statement, env: &Environment, mut init: bool) -> Result<ControlFlow, ErrorMessage> {
+pub fn execute(
+    stmt: Statement,
+    env: &Environment,
+    mut init: bool,
+) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
 
     if init {
         match check_stmt(stmt.clone(), &new_env, None)? {
             ControlType::Continue(control_env) => new_env = control_env,
-            ControlType::Return(_) => unreachable!()
+            ControlType::Return(_) => unreachable!(),
         }
         init = false;
     }
@@ -53,7 +57,7 @@ pub fn execute(stmt: Statement, env: &Environment, mut init: bool) -> Result<Con
                 EnvValue::Exp(Expression::CFalse) => match stmt_else {
                     Some(else_statement) => execute(*else_statement, &new_env, init),
                     None => Ok(ControlFlow::Continue(new_env)),
-                }
+                },
                 _ => unreachable!(),
             }
         }
@@ -67,28 +71,22 @@ pub fn execute(stmt: Statement, env: &Environment, mut init: bool) -> Result<Con
                                 new_env = control_env;
                                 value = eval(*cond.clone(), &new_env)?;
                             }
-                            ControlFlow::Return(value) => return Ok(ControlFlow::Return(value))
+                            ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
                         }
                     }
-                    EnvValue::Exp(Expression::CFalse) => {
-                        return Ok(ControlFlow::Continue(new_env))
-                    }
-                    _ => unreachable!()
+                    EnvValue::Exp(Expression::CFalse) => return Ok(ControlFlow::Continue(new_env)),
+                    _ => unreachable!(),
                 }
             }
         }
-        Statement::Sequence(s1, s2) => {
-            match execute(*s1, &new_env, init)? {
-                ControlFlow::Continue(control_env) => {
-                    new_env = control_env;
-                    execute(*s2, &new_env, init)
-                }
-                ControlFlow::Return(value) => return Ok(ControlFlow::Return(value))
+        Statement::Sequence(s1, s2) => match execute(*s1, &new_env, init)? {
+            ControlFlow::Continue(control_env) => {
+                new_env = control_env;
+                execute(*s2, &new_env, init)
             }
-        }
-        Statement::FuncDef(_, _) => {
-            Ok(ControlFlow::Continue(new_env))
-        }
+            ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+        },
+        Statement::FuncDef(_, _) => Ok(ControlFlow::Continue(new_env)),
         Statement::Return(exp) => {
             let exp_value = eval(*exp, &new_env)?;
             Ok(ControlFlow::Return(exp_value))
@@ -113,10 +111,10 @@ fn call(name: Name, args: Vec<Expression>, env: &Environment) -> Result<EnvValue
 
             match execute(*func.body.clone(), &new_env, false)? {
                 ControlFlow::Return(value) => Ok(value),
-                ControlFlow::Continue(_) => unreachable!()
+                ControlFlow::Continue(_) => unreachable!(),
             }
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -152,12 +150,18 @@ where
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => {
-            Ok(EnvValue::Exp(Expression::CInt(op(v1 as f64, v2 as f64) as i32)))
+        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => Ok(
+            EnvValue::Exp(Expression::CInt(op(v1 as f64, v2 as f64) as i32)),
+        ),
+        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
+            Ok(EnvValue::Exp(Expression::CReal(op(v1 as f64, v2))))
         }
-        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CReal(v2))) => Ok(EnvValue::Exp(Expression::CReal(op(v1 as f64, v2)))),
-        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CInt(v2))) => Ok(EnvValue::Exp(Expression::CReal(op(v1, v2 as f64)))),
-        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => Ok(EnvValue::Exp(Expression::CReal(op(v1, v2)))),
+        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CInt(v2))) => {
+            Ok(EnvValue::Exp(Expression::CReal(op(v1, v2 as f64))))
+        }
+        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
+            Ok(EnvValue::Exp(Expression::CReal(op(v1, v2))))
+        }
         _ => Err(error_msg.to_string()),
     }
 }
@@ -216,10 +220,18 @@ where
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (EnvValue::Exp(Expression::CTrue), EnvValue::Exp(Expression::CTrue)) => Ok(EnvValue::Exp(op(true, true))),
-        (EnvValue::Exp(Expression::CTrue), EnvValue::Exp(Expression::CFalse)) => Ok(EnvValue::Exp(op(true, false))),
-        (EnvValue::Exp(Expression::CFalse), EnvValue::Exp(Expression::CTrue)) => Ok(EnvValue::Exp(op(false, true))),
-        (EnvValue::Exp(Expression::CFalse), EnvValue::Exp(Expression::CFalse)) => Ok(EnvValue::Exp(op(false, false))),
+        (EnvValue::Exp(Expression::CTrue), EnvValue::Exp(Expression::CTrue)) => {
+            Ok(EnvValue::Exp(op(true, true)))
+        }
+        (EnvValue::Exp(Expression::CTrue), EnvValue::Exp(Expression::CFalse)) => {
+            Ok(EnvValue::Exp(op(true, false)))
+        }
+        (EnvValue::Exp(Expression::CFalse), EnvValue::Exp(Expression::CTrue)) => {
+            Ok(EnvValue::Exp(op(false, true)))
+        }
+        (EnvValue::Exp(Expression::CFalse), EnvValue::Exp(Expression::CFalse)) => {
+            Ok(EnvValue::Exp(op(false, false)))
+        }
         _ => Err(error_msg.to_string()),
     }
 }
@@ -279,10 +291,18 @@ where
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
     match (v1, v2) {
-        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => Ok(EnvValue::Exp(op(v1 as f64, v2 as f64))),
-        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CReal(v2))) => Ok(EnvValue::Exp(op(v1 as f64, v2))),
-        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CInt(v2))) => Ok(EnvValue::Exp(op(v1, v2 as f64))),
-        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => Ok(EnvValue::Exp(op(v1, v2))),
+        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => {
+            Ok(EnvValue::Exp(op(v1 as f64, v2 as f64)))
+        }
+        (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
+            Ok(EnvValue::Exp(op(v1 as f64, v2)))
+        }
+        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CInt(v2))) => {
+            Ok(EnvValue::Exp(op(v1, v2 as f64)))
+        }
+        (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
+            Ok(EnvValue::Exp(op(v1, v2)))
+        }
         _ => Err(error_msg.to_string()),
     }
 }
@@ -373,9 +393,9 @@ mod tests {
 
     use super::*;
     use crate::ir::ast::Expression::*;
+    use crate::ir::ast::Function;
     use crate::ir::ast::Statement::*;
     use crate::ir::ast::Type::*;
-    use crate::ir::ast::Function;
     use approx::relative_eq;
 
     #[test]
@@ -497,7 +517,9 @@ mod tests {
         let div1 = Div(Box::new(c10), Box::new(c3));
         let res = eval(div1, &env);
         match res {
-            Ok(EnvValue::Exp(Expression::CReal(v))) => assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON)),
+            Ok(EnvValue::Exp(Expression::CReal(v))) => {
+                assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON))
+            }
             Err(msg) => assert!(false, "{}", msg),
             _ => assert!(false, "Not expected."),
         }
@@ -505,7 +527,10 @@ mod tests {
 
     #[test]
     fn eval_variable() {
-        let env = HashMap::from([(String::from("x"), (Some(EnvValue::Exp(CInt(10))), TInteger)), (String::from("y"), (Some(EnvValue::Exp(CInt(20))), TInteger))]);
+        let env = HashMap::from([
+            (String::from("x"), (Some(EnvValue::Exp(CInt(10))), TInteger)),
+            (String::from("y"), (Some(EnvValue::Exp(CInt(20))), TInteger)),
+        ]);
         let v1 = Var(String::from("x"));
         let v2 = Var(String::from("y"));
         assert_eq!(eval(v1, &env), Ok(EnvValue::Exp(CInt(10))));
@@ -514,7 +539,10 @@ mod tests {
 
     #[test]
     fn eval_expression_with_variables() {
-        let env = HashMap::from([(String::from("a"), (Some(EnvValue::Exp(CInt(5))), TInteger)), (String::from("b"), (Some(EnvValue::Exp(CInt(3))), TInteger))]);
+        let env = HashMap::from([
+            (String::from("a"), (Some(EnvValue::Exp(CInt(5))), TInteger)),
+            (String::from("b"), (Some(EnvValue::Exp(CInt(3))), TInteger)),
+        ]);
         let expr = Mul(
             Box::new(Var(String::from("a"))),
             Box::new(Add(Box::new(Var(String::from("b"))), Box::new(CInt(2)))),
@@ -549,7 +577,10 @@ mod tests {
         let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)), Some(TInteger));
 
         match execute(assign_stmt, &env, true) {
-            Ok(ControlFlow::Continue(new_env)) => assert_eq!(new_env.get("x"), Some(&(Some(EnvValue::Exp(CInt(42))), TInteger))),
+            Ok(ControlFlow::Continue(new_env)) => assert_eq!(
+                new_env.get("x"),
+                Some(&(Some(EnvValue::Exp(CInt(42))), TInteger))
+            ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -579,12 +610,12 @@ mod tests {
                 Box::new(Var(String::from("y"))),
                 Box::new(Var(String::from("x"))),
             )),
-            None
+            None,
         );
         let a4 = Assignment(
             String::from("x"),
             Box::new(Sub(Box::new(Var(String::from("x"))), Box::new(CInt(1)))),
-            None
+            None,
         );
 
         let seq1 = Sequence(Box::new(a3), Box::new(a4));
@@ -599,8 +630,14 @@ mod tests {
 
         match execute(program, &env, true) {
             Ok(ControlFlow::Continue(new_env)) => {
-                assert_eq!(new_env.get("y"), Some(&(Some(EnvValue::Exp(CInt(55))), TInteger)));
-                assert_eq!(new_env.get("x"), Some(&(Some(EnvValue::Exp(CInt(0))), TInteger)));
+                assert_eq!(
+                    new_env.get("y"),
+                    Some(&(Some(EnvValue::Exp(CInt(55))), TInteger))
+                );
+                assert_eq!(
+                    new_env.get("x"),
+                    Some(&(Some(EnvValue::Exp(CInt(0))), TInteger))
+                );
             }
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -636,7 +673,10 @@ mod tests {
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
         match execute(program, &env, true) {
-            Ok(ControlFlow::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(Some(EnvValue::Exp(CInt(1))), TInteger))),
+            Ok(ControlFlow::Continue(new_env)) => assert_eq!(
+                new_env.get("y"),
+                Some(&(Some(EnvValue::Exp(CInt(1))), TInteger))
+            ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -689,7 +729,10 @@ mod tests {
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
         match execute(program, &env, true) {
-            Ok(ControlFlow::Continue(new_env)) => assert_eq!(new_env.get("y"), Some(&(Some(EnvValue::Exp(CInt(2))), TInteger))),
+            Ok(ControlFlow::Continue(new_env)) => assert_eq!(
+                new_env.get("y"),
+                Some(&(Some(EnvValue::Exp(CInt(2))), TInteger))
+            ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
@@ -811,16 +854,25 @@ mod tests {
                 Box::new(Mul(Box::new(CInt(2)), Box::new(Var(String::from("x"))))),
                 Box::new(CInt(3)),
             )),
-            Some(TInteger)
+            Some(TInteger),
         );
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
         match execute(program, &env, true) {
             Ok(ControlFlow::Continue(new_env)) => {
-                assert_eq!(new_env.get("x"), Some(&(Some(EnvValue::Exp(CInt(5))), TInteger)));
-                assert_eq!(new_env.get("y"), Some(&(Some(EnvValue::Exp(CInt(0))), TInteger)));
-                assert_eq!(new_env.get("z"), Some(&(Some(EnvValue::Exp(CInt(13))), TInteger)));
+                assert_eq!(
+                    new_env.get("x"),
+                    Some(&(Some(EnvValue::Exp(CInt(5))), TInteger))
+                );
+                assert_eq!(
+                    new_env.get("y"),
+                    Some(&(Some(EnvValue::Exp(CInt(0))), TInteger))
+                );
+                assert_eq!(
+                    new_env.get("z"),
+                    Some(&(Some(EnvValue::Exp(CInt(13))), TInteger))
+                );
             }
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -840,7 +892,7 @@ mod tests {
          * >        return n - 1
          * >
          * >    return fibonacci(n - 1) + fibonacci(n - 2)
-         * > 
+         * >
          * > fib: TInteger = fibonacci(10)
          *
          * After executing, 'fib' should be 34.
@@ -849,73 +901,55 @@ mod tests {
 
         let func = FuncDef(
             "fibonacci".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("n".to_string(), TInteger)]), 
+                params: Some(vec![("n".to_string(), TInteger)]),
                 body: Box::new(Sequence(
                     Box::new(IfThenElse(
-                        Box::new(LT(
-                            Box::new(Var("n".to_string())), 
-                            Box::new(CInt(0))
-                        )), 
-                        Box::new(Return(
-                            Box::new(CInt(0))
-                        )), 
-                        None
-                    )), 
+                        Box::new(LT(Box::new(Var("n".to_string())), Box::new(CInt(0)))),
+                        Box::new(Return(Box::new(CInt(0)))),
+                        None,
+                    )),
                     Box::new(Sequence(
                         Box::new(IfThenElse(
-                            Box::new(LTE(
-                                Box::new(Var("n".to_string())), 
-                                Box::new(CInt(2))
-                            )), 
-                            Box::new(Return(
-                                Box::new(Sub(
-                                    Box::new(Var("n".to_string())), 
-                                    Box::new(CInt(1))
-                                ))
-                            )), 
-                            None
-                        )), 
-                        Box::new(Return(
-                            Box::new(Add(
-                                Box::new(FuncCall(
-                                    "fibonacci".to_string(), 
-                                    vec![Sub(
-                                        Box::new(Var("n".to_string())),
-                                        Box::new(CInt(1))
-                                    )]
-                                )),
-                                Box::new(FuncCall(
-                                    "fibonacci".to_string(), 
-                                    vec![Sub(
-                                        Box::new(Var("n".to_string())),
-                                        Box::new(CInt(2))
-                                    )]
-                                ))
-                            ))
-                        ))
-                    ))
-                )) 
-            }
+                            Box::new(LTE(Box::new(Var("n".to_string())), Box::new(CInt(2)))),
+                            Box::new(Return(Box::new(Sub(
+                                Box::new(Var("n".to_string())),
+                                Box::new(CInt(1)),
+                            )))),
+                            None,
+                        )),
+                        Box::new(Return(Box::new(Add(
+                            Box::new(FuncCall(
+                                "fibonacci".to_string(),
+                                vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(1)))],
+                            )),
+                            Box::new(FuncCall(
+                                "fibonacci".to_string(),
+                                vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(2)))],
+                            )),
+                        )))),
+                    )),
+                )),
+            },
         );
 
         let program = Sequence(
             Box::new(func),
             Box::new(Assignment(
                 "fib".to_string(),
-                Box::new(FuncCall(
-                    "fibonacci".to_string(), 
-                    vec![CInt(10)]
-                )),
-                Some(TInteger)
-            ))
+                Box::new(FuncCall("fibonacci".to_string(), vec![CInt(10)])),
+                Some(TInteger),
+            )),
         );
 
         match execute(program, &env, true) {
-            Ok(ControlFlow::Continue(new_env)) => assert_eq!(new_env.get("fib"), Some(&(Some(EnvValue::Exp(CInt(34))), TInteger))),
+            Ok(ControlFlow::Continue(new_env)) => assert_eq!(
+                new_env.get("fib"),
+                Some(&(Some(EnvValue::Exp(CInt(34))), TInteger))
+            ),
             Ok(ControlFlow::Return(_)) => assert!(false),
-            Err(s) => assert!(false, "{}", s)
+            Err(s) => assert!(false, "{}", s),
         }
     }
 }

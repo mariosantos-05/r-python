@@ -5,7 +5,7 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvValue {
     Exp(Expression),
-    Func(Function)
+    Func(Function),
 }
 
 pub type Environment = HashMap<Name, (Option<EnvValue>, Type)>;
@@ -14,7 +14,7 @@ pub type Environment = HashMap<Name, (Option<EnvValue>, Type)>;
 pub struct Function {
     pub kind: Type,
     pub params: Option<Vec<(Name, Type)>>,
-    pub body: Box<Statement>
+    pub body: Box<Statement>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,5 +71,5 @@ pub enum Statement {
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Name, Function),
-    Return(Box<Expression>)
+    Return(Box<Expression>),
 }

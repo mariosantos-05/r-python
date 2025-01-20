@@ -1,10 +1,10 @@
-use crate::ir::ast::{Name, Expression, Statement, Type, Environment, EnvValue};
+use crate::ir::ast::{EnvValue, Environment, Expression, Name, Statement, Type};
 
 type ErrorMessage = String;
 
 pub enum ControlType {
     Continue(Environment),
-    Return(Type)
+    Return(Type),
 }
 
 pub fn check_exp(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
@@ -27,11 +27,15 @@ pub fn check_exp(exp: Expression, env: &Environment) -> Result<Type, ErrorMessag
         Expression::GTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::Var(name) => check_var_name(name, env),
-        Expression::FuncCall(name, args) => check_func_call(name, args, env)
+        Expression::FuncCall(name, args) => check_func_call(name, args, env),
     }
 }
 
-pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) -> Result<ControlType, ErrorMessage> {
+pub fn check_stmt(
+    stmt: Statement,
+    env: &Environment,
+    exptd_type: Option<Type>,
+) -> Result<ControlType, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp, kind) => {
             let mut new_env = env.clone();
@@ -39,13 +43,20 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
 
             if let Some(def_type) = kind {
                 if exp_type != def_type {
-                    return Err(format!("[Type Error] cannot assign type '{:?}' to '{:?}' variable.", exp_type, def_type))
+                    return Err(format!(
+                        "[Type Error] cannot assign type '{:?}' to '{:?}' variable.",
+                        exp_type, def_type
+                    ));
                 }
                 new_env.insert(name, (None, exp_type));
             } else {
                 let result_type = check_var_name(name.clone(), &new_env)?;
                 if exp_type != result_type {
-                    return Err(format!("[Type Error] variable '{}' is already defined as type '{:?}'.", name.clone(), result_type))
+                    return Err(format!(
+                        "[Type Error] variable '{}' is already defined as type '{:?}'.",
+                        name.clone(),
+                        result_type
+                    ));
                 }
                 new_env.entry(name).and_modify(|e| e.1 = exp_type);
             }
@@ -57,24 +68,25 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
             let exp_type = check_exp(*exp, &new_env)?;
 
             if exp_type != Type::TBool {
-                return Err(format!("[Type Error] if expression must be boolean."))
+                return Err(format!("[Type Error] if expression must be boolean."));
             }
 
-            let (new_env, stmt_then_type) = match check_stmt(*stmt_then, &new_env, exptd_type.clone())? {
-                ControlType::Continue(control_env) => (control_env, None),
-                ControlType::Return(control_type) => (new_env, Some(control_type))
-            };
+            let (new_env, stmt_then_type) =
+                match check_stmt(*stmt_then, &new_env, exptd_type.clone())? {
+                    ControlType::Continue(control_env) => (control_env, None),
+                    ControlType::Return(control_type) => (new_env, Some(control_type)),
+                };
             let (new_env, stmt_else_type) = match option {
                 Some(stmt_else) => match check_stmt(*stmt_else, &new_env, exptd_type)? {
                     ControlType::Continue(control_env) => (control_env, None),
-                    ControlType::Return(control_type) => (new_env, Some(control_type))
-                }
-                None => (new_env, None)
+                    ControlType::Return(control_type) => (new_env, Some(control_type)),
+                },
+                None => (new_env, None),
             };
 
             match stmt_then_type.or(stmt_else_type) {
                 Some(kind) => Ok(ControlType::Return(kind)),
-                None => Ok(ControlType::Continue(new_env))
+                None => Ok(ControlType::Continue(new_env)),
             }
         }
         Statement::While(exp, stmt_while) => {
@@ -82,7 +94,7 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
             let exp_type = check_exp(*exp, &new_env)?;
 
             if exp_type != Type::TBool {
-                return Err(format!("[Type Error] while expression must be boolean."))
+                return Err(format!("[Type Error] while expression must be boolean."));
             }
 
             check_stmt(*stmt_while, &new_env, exptd_type)
@@ -92,21 +104,24 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
 
             let (new_env, stmt1_type) = match check_stmt(*stmt1, &new_env, exptd_type.clone())? {
                 ControlType::Continue(control_env) => (control_env, None),
-                ControlType::Return(control_type) => (new_env, Some(control_type))
+                ControlType::Return(control_type) => (new_env, Some(control_type)),
             };
             let (new_env, stmt2_type) = match check_stmt(*stmt2, &new_env, exptd_type.clone())? {
                 ControlType::Continue(control_env) => (control_env, None),
-                ControlType::Return(control_type) => (new_env, Some(control_type))
+                ControlType::Return(control_type) => (new_env, Some(control_type)),
             };
-            
+
             match stmt1_type.or(stmt2_type) {
                 Some(kind) => Ok(ControlType::Return(kind)),
-                None => Ok(ControlType::Continue(new_env))
+                None => Ok(ControlType::Continue(new_env)),
             }
         }
-        Statement::FuncDef(name, func) => { 
+        Statement::FuncDef(name, func) => {
             let mut new_env = env.clone();
-            new_env.insert(name.clone(), (Some(EnvValue::Func(func.clone())), Type::TFunction));
+            new_env.insert(
+                name.clone(),
+                (Some(EnvValue::Func(func.clone())), Type::TFunction),
+            );
 
             if let Some(params) = func.clone().params {
                 for (param_name, param_type) in params {
@@ -116,7 +131,10 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
 
             match check_stmt(*func.clone().body, &new_env, Some(func.clone().kind))? {
                 ControlType::Return(_) => Ok(ControlType::Continue(new_env)),
-                ControlType::Continue(_) => Err(format!("[Type Error] '{}()' does not have a result statement.", name))
+                ControlType::Continue(_) => Err(format!(
+                    "[Type Error] '{}()' does not have a result statement.",
+                    name
+                )),
             }
         }
         Statement::Return(exp) => {
@@ -124,51 +142,63 @@ pub fn check_stmt(stmt: Statement, env: &Environment, exptd_type: Option<Type>) 
             let exp_type = check_exp(*exp, &new_env)?;
 
             if exptd_type == None {
-                return Err(format!("[Type Error] return statement outside function body."))
+                return Err(format!(
+                    "[Type Error] return statement outside function body."
+                ));
             }
             if exp_type != exptd_type.unwrap() {
-                return Err(format!("[Type Error] return expression does not match function's return type."))
-            } 
+                return Err(format!(
+                    "[Type Error] return expression does not match function's return type."
+                ));
+            }
 
             Ok(ControlType::Return(exp_type))
         }
-        _ => Err(String::from("not implemented yet"))
+        _ => Err(String::from("not implemented yet")),
     }
 }
 
 fn check_func_call(
-    name: String, 
-    args: Vec<Expression>, 
-    env: &Environment
+    name: String,
+    args: Vec<Expression>,
+    env: &Environment,
 ) -> Result<Type, ErrorMessage> {
     match env.get(&name) {
         Some((Some(EnvValue::Func(func)), _)) => {
             if let Some(params) = &func.params {
                 if params.len() != args.len() {
-                    return Err(format!("[Type Error] '{}()' expected {} argument(s) but got {}", name, params.len(), args.len()));
+                    return Err(format!(
+                        "[Type Error] '{}()' expected {} argument(s) but got {}",
+                        name,
+                        params.len(),
+                        args.len()
+                    ));
                 }
 
                 for ((param, param_type), exp) in params.iter().zip(args) {
                     let exp_type = check_exp(exp, env)?;
                     if exp_type != *param_type {
-                        return Err(format!("[Type Error] incorret type for argument '{}' in '{}()'.", param, name))
+                        return Err(format!(
+                            "[Type Error] incorret type for argument '{}' in '{}()'.",
+                            param, name
+                        ));
                     }
                 }
             }
             Ok(func.kind.clone())
         }
-        Some(_) => Err(format!("[Type Error] cannot call non-function object '{}'.", name)),
-        None => Err(format!("[Type Error] '{}()' is not defined.", name))
+        Some(_) => Err(format!(
+            "[Type Error] cannot call non-function object '{}'.",
+            name
+        )),
+        None => Err(format!("[Type Error] '{}()' is not defined.", name)),
     }
 }
 
-fn check_var_name(
-    name: Name,
-    env: &Environment
-) -> Result<Type, ErrorMessage> {
+fn check_var_name(name: Name, env: &Environment) -> Result<Type, ErrorMessage> {
     match env.get(&name) {
         Some(value) => Ok(value.clone().1),
-        None => Err(format!("[Type Error] '{}' is not defined.", name))
+        None => Err(format!("[Type Error] '{}' is not defined.", name)),
     }
 }
 
@@ -235,9 +265,9 @@ mod tests {
     use super::*;
 
     use crate::ir::ast::Expression::*;
+    use crate::ir::ast::Function;
     use crate::ir::ast::Statement::*;
     use crate::ir::ast::Type::*;
-    use crate::ir::ast::Function;
 
     #[test]
     fn check_tlist_comparison() {
@@ -372,11 +402,7 @@ mod tests {
     #[test]
     fn check_assignment() {
         let env = Environment::new();
-        let assignment = Assignment(
-            "a".to_string(), 
-            Box::new(CTrue), 
-            Some(TBool)
-        );
+        let assignment = Assignment("a".to_string(), Box::new(CTrue), Some(TBool));
 
         match check_stmt(assignment, &env, None) {
             Ok(ControlType::Continue(new_env)) => {
@@ -390,38 +416,32 @@ mod tests {
     #[test]
     fn check_assignment_error1() {
         let env = Environment::new();
-        let assignment = Assignment(
-            "a".to_string(), 
-            Box::new(CTrue), 
-            Some(TInteger)
-        );
+        let assignment = Assignment("a".to_string(), Box::new(CTrue), Some(TInteger));
 
         match check_stmt(assignment, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] cannot assign type 'TBool' to 'TInteger' variable."),
+            Err(s) => assert_eq!(
+                s,
+                "[Type Error] cannot assign type 'TBool' to 'TInteger' variable."
+            ),
         }
     }
 
     #[test]
     fn check_assignment_error2() {
         let env = Environment::new();
-        let assignment1 = Assignment(
-            "a".to_string(), 
-            Box::new(CTrue), 
-            Some(TBool)
-        );
+        let assignment1 = Assignment("a".to_string(), Box::new(CTrue), Some(TBool));
 
-        let assignment2 = Assignment(
-            "a".to_string(), 
-            Box::new(CInt(1)), 
-            None
-        );
+        let assignment2 = Assignment("a".to_string(), Box::new(CInt(1)), None);
 
         let program = Sequence(Box::new(assignment1), Box::new(assignment2));
 
         match check_stmt(program, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] variable 'a' is already defined as type 'TBool'."),
+            Err(s) => assert_eq!(
+                s,
+                "[Type Error] variable 'a' is already defined as type 'TBool'."
+            ),
         }
     }
 
@@ -429,17 +449,17 @@ mod tests {
     fn check_if_then_else() {
         let env = Environment::new();
         let ifthenelse = IfThenElse(
-            Box::new(CTrue), 
+            Box::new(CTrue),
             Box::new(Assignment(
-                "a".to_string(), 
-                Box::new(CInt(1)), 
-                Some(TInteger)
-            )), 
+                "a".to_string(),
+                Box::new(CInt(1)),
+                Some(TInteger),
+            )),
             Some(Box::new(Assignment(
-                "b".to_string(), 
-                Box::new(CReal(2.0)), 
-                Some(TReal)
-            )))
+                "b".to_string(),
+                Box::new(CReal(2.0)),
+                Some(TReal),
+            ))),
         );
 
         match check_stmt(ifthenelse, &env, None) {
@@ -456,17 +476,17 @@ mod tests {
     fn check_if_then_else_error() {
         let env = Environment::new();
         let ifthenelse = IfThenElse(
-            Box::new(CInt(1)), 
+            Box::new(CInt(1)),
             Box::new(Assignment(
-                "a".to_string(), 
-                Box::new(CInt(1)), 
-                Some(TInteger)
-            )), 
+                "a".to_string(),
+                Box::new(CInt(1)),
+                Some(TInteger),
+            )),
             Some(Box::new(Assignment(
-                "b".to_string(), 
-                Box::new(CReal(2.0)), 
-                Some(TReal)
-            )))
+                "b".to_string(),
+                Box::new(CReal(2.0)),
+                Some(TReal),
+            ))),
         );
 
         match check_stmt(ifthenelse, &env, None) {
@@ -478,31 +498,20 @@ mod tests {
     #[test]
     fn check_while() {
         let env = Environment::new();
-        let assignment1 = Assignment(
-            "a".to_string(), 
-            Box::new(CInt(3)), 
-            Some(TInteger)
-        );
-        let assignment2 = Assignment(
-            "b".to_string(), 
-            Box::new(CInt(0)), 
-            Some(TInteger)
-        );
+        let assignment1 = Assignment("a".to_string(), Box::new(CInt(3)), Some(TInteger));
+        let assignment2 = Assignment("b".to_string(), Box::new(CInt(0)), Some(TInteger));
         let while_stmt = While(
-            Box::new(GT(
-                Box::new(Var("a".to_string())), 
-                Box::new(CInt(0))
-            )), 
+            Box::new(GT(Box::new(Var("a".to_string())), Box::new(CInt(0)))),
             Box::new(Assignment(
-                "b".to_string(), 
-                Box::new(Add(
-                    Box::new(Var("b".to_string())), 
-                    Box::new(CInt(1))
-                )), 
-                None
-            ))
+                "b".to_string(),
+                Box::new(Add(Box::new(Var("b".to_string())), Box::new(CInt(1)))),
+                None,
+            )),
         );
-        let program = Sequence(Box::new(assignment1), Box::new(Sequence(Box::new(assignment2), Box::new(while_stmt))));
+        let program = Sequence(
+            Box::new(assignment1),
+            Box::new(Sequence(Box::new(assignment2), Box::new(while_stmt))),
+        );
 
         match check_stmt(program, &env, None) {
             Ok(ControlType::Continue(new_env)) => {
@@ -517,28 +526,20 @@ mod tests {
     #[test]
     fn check_while_error() {
         let env = Environment::new();
-        let assignment1 = Assignment(
-            "a".to_string(), 
-            Box::new(CInt(3)), 
-            Some(TInteger)
-        );
-        let assignment2 = Assignment(
-            "b".to_string(), 
-            Box::new(CInt(0)), 
-            Some(TInteger)
-        );
+        let assignment1 = Assignment("a".to_string(), Box::new(CInt(3)), Some(TInteger));
+        let assignment2 = Assignment("b".to_string(), Box::new(CInt(0)), Some(TInteger));
         let while_stmt = While(
-            Box::new(CInt(1)), 
+            Box::new(CInt(1)),
             Box::new(Assignment(
-                "b".to_string(), 
-                Box::new(Add(
-                    Box::new(Var("b".to_string())), 
-                    Box::new(CInt(1))
-                )), 
-                None
-            ))
+                "b".to_string(),
+                Box::new(Add(Box::new(Var("b".to_string())), Box::new(CInt(1)))),
+                None,
+            )),
         );
-        let program = Sequence(Box::new(assignment1), Box::new(Sequence(Box::new(assignment2), Box::new(while_stmt))));
+        let program = Sequence(
+            Box::new(assignment1),
+            Box::new(Sequence(Box::new(assignment2), Box::new(while_stmt))),
+        );
 
         match check_stmt(program, &env, None) {
             Ok(_) => assert!(false),
@@ -551,31 +552,42 @@ mod tests {
         let env = Environment::new();
         let func = FuncDef(
             "add".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
+                params: Some(vec![
+                    ("a".to_string(), TInteger),
+                    ("b".to_string(), TInteger),
+                ]),
                 body: Box::new(Return(Box::new(Add(
-                    Box::new(Var("a".to_string())), 
-                    Box::new(Var("b".to_string()))
-                ))))
-            }
+                    Box::new(Var("a".to_string())),
+                    Box::new(Var("b".to_string())),
+                )))),
+            },
         );
 
         match check_stmt(func, &env, None) {
             Ok(ControlType::Continue(new_env)) => {
                 assert_eq!(
-                    new_env.get("add"), 
-                    Some((Some(EnvValue::Func(Function { 
-                        kind: TInteger,
-                        params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
-                        body: Box::new(Return(Box::new(Add(
-                            Box::new(Var("a".to_string())), 
-                            Box::new(Var("b".to_string()))
-                        ))))
-                    })), TFunction)).as_ref());
+                    new_env.get("add"),
+                    Some((
+                        Some(EnvValue::Func(Function {
+                            kind: TInteger,
+                            params: Some(vec![
+                                ("a".to_string(), TInteger),
+                                ("b".to_string(), TInteger)
+                            ]),
+                            body: Box::new(Return(Box::new(Add(
+                                Box::new(Var("a".to_string())),
+                                Box::new(Var("b".to_string()))
+                            ))))
+                        })),
+                        TFunction
+                    ))
+                    .as_ref()
+                );
             }
             Ok(_) => assert!(false),
-            Err(s) => assert!(false, "{}", s)
+            Err(s) => assert!(false, "{}", s),
         }
     }
 
@@ -584,20 +596,23 @@ mod tests {
         let env = Environment::new();
         let func = FuncDef(
             "add".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
+                params: Some(vec![
+                    ("a".to_string(), TInteger),
+                    ("b".to_string(), TInteger),
+                ]),
                 body: Box::new(Assignment(
-                    "a".to_string(), 
-                    Box::new(CInt(1)), 
-                    Some(TInteger)
-                ))
-            }
+                    "a".to_string(),
+                    Box::new(CInt(1)),
+                    Some(TInteger),
+                )),
+            },
         );
 
         match check_stmt(func, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] 'add()' does not have a result statement.")
+            Err(s) => assert_eq!(s, "[Type Error] 'add()' does not have a result statement."),
         }
     }
 
@@ -606,16 +621,22 @@ mod tests {
         let env = Environment::new();
         let func = FuncDef(
             "add".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
-                body: Box::new(Return(Box::new(CTrue)))    
-            }
+                params: Some(vec![
+                    ("a".to_string(), TInteger),
+                    ("b".to_string(), TInteger),
+                ]),
+                body: Box::new(Return(Box::new(CTrue))),
+            },
         );
 
         match check_stmt(func, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] return expression does not match function's return type.")
+            Err(s) => assert_eq!(
+                s,
+                "[Type Error] return expression does not match function's return type."
+            ),
         }
     }
 
@@ -626,7 +647,7 @@ mod tests {
 
         match check_stmt(retrn, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] return statement outside function body.")
+            Err(s) => assert_eq!(s, "[Type Error] return statement outside function body."),
         }
     }
 
@@ -636,55 +657,52 @@ mod tests {
 
         let func = FuncDef(
             "add".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
+                params: Some(vec![
+                    ("a".to_string(), TInteger),
+                    ("b".to_string(), TInteger),
+                ]),
                 body: Box::new(Sequence(
                     Box::new(Assignment(
-                        "c".to_string(), 
+                        "c".to_string(),
                         Box::new(Add(
-                            Box::new(Var("a".to_string())), 
-                            Box::new(Var("b".to_string()))
+                            Box::new(Var("a".to_string())),
+                            Box::new(Var("b".to_string())),
                         )),
-                        Some(TInteger)
+                        Some(TInteger),
                     )),
-                    Box::new(Return(Box::new(Var("c".to_string())))) 
-                ))
-            }
+                    Box::new(Return(Box::new(Var("c".to_string())))),
+                )),
+            },
         );
 
         let program1 = Sequence(
             Box::new(func.clone()),
             Box::new(Assignment(
                 "var".to_string(),
-                Box::new(FuncCall(
-                    "add".to_string(), 
-                    vec![CInt(1)]
-                )),
-                Some(TInteger)
-            ))
+                Box::new(FuncCall("add".to_string(), vec![CInt(1)])),
+                Some(TInteger),
+            )),
         );
 
         let program2 = Sequence(
             Box::new(func),
             Box::new(Assignment(
                 "var".to_string(),
-                Box::new(FuncCall(
-                    "add".to_string(), 
-                    vec![CInt(1), CInt(2), CInt(3)]
-                )),
-                Some(TInteger)
-            ))
+                Box::new(FuncCall("add".to_string(), vec![CInt(1), CInt(2), CInt(3)])),
+                Some(TInteger),
+            )),
         );
 
         match check_stmt(program1, &env.clone(), None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] 'add()' expected 2 argument(s) but got 1")
+            Err(s) => assert_eq!(s, "[Type Error] 'add()' expected 2 argument(s) but got 1"),
         }
 
         match check_stmt(program2, &env, None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] 'add()' expected 2 argument(s) but got 3")
+            Err(s) => assert_eq!(s, "[Type Error] 'add()' expected 2 argument(s) but got 3"),
         }
     }
 
@@ -694,38 +712,38 @@ mod tests {
 
         let func = FuncDef(
             "add".to_string(),
-            Function { 
+            Function {
                 kind: TInteger,
-                params: Some(vec![("a".to_string(), TInteger), ("b".to_string(), TInteger)]), 
+                params: Some(vec![
+                    ("a".to_string(), TInteger),
+                    ("b".to_string(), TInteger),
+                ]),
                 body: Box::new(Sequence(
                     Box::new(Assignment(
-                        "c".to_string(), 
+                        "c".to_string(),
                         Box::new(Add(
-                            Box::new(Var("a".to_string())), 
-                            Box::new(Var("b".to_string()))
+                            Box::new(Var("a".to_string())),
+                            Box::new(Var("b".to_string())),
                         )),
-                        Some(TInteger)
+                        Some(TInteger),
                     )),
-                    Box::new(Return(Box::new(Var("c".to_string())))) 
-                ))
-            }
+                    Box::new(Return(Box::new(Var("c".to_string())))),
+                )),
+            },
         );
 
         let program = Sequence(
             Box::new(func.clone()),
             Box::new(Assignment(
                 "var".to_string(),
-                Box::new(FuncCall(
-                    "add".to_string(), 
-                    vec![CInt(1), CTrue]
-                )),
-                Some(TInteger)
-            ))
+                Box::new(FuncCall("add".to_string(), vec![CInt(1), CTrue])),
+                Some(TInteger),
+            )),
         );
 
         match check_stmt(program, &env.clone(), None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] incorret type for argument 'b' in 'add()'.")
+            Err(s) => assert_eq!(s, "[Type Error] incorret type for argument 'b' in 'add()'."),
         }
     }
 
@@ -736,21 +754,18 @@ mod tests {
             Box::new(Assignment(
                 "a".to_string(),
                 Box::new(CInt(1)),
-                Some(TInteger)
+                Some(TInteger),
             )),
             Box::new(Assignment(
                 "b".to_string(),
-                Box::new(FuncCall(
-                    "a".to_string(), 
-                    vec![]
-                )),
-                Some(TInteger)
-            ))
+                Box::new(FuncCall("a".to_string(), vec![])),
+                Some(TInteger),
+            )),
         );
 
         match check_stmt(program, &env.clone(), None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] cannot call non-function object 'a'.")
+            Err(s) => assert_eq!(s, "[Type Error] cannot call non-function object 'a'."),
         }
     }
 
@@ -758,17 +773,14 @@ mod tests {
     fn check_function_call_undefined() {
         let env = Environment::new();
         let program = Assignment(
-            "a".to_string(), 
-            Box::new(FuncCall(
-                "func".to_string(), 
-                vec![]
-            )), 
-            Some(TInteger)
+            "a".to_string(),
+            Box::new(FuncCall("func".to_string(), vec![])),
+            Some(TInteger),
         );
 
         match check_stmt(program, &env.clone(), None) {
             Ok(_) => assert!(false),
-            Err(s) => assert_eq!(s, "[Type Error] 'func()' is not defined.")
+            Err(s) => assert_eq!(s, "[Type Error] 'func()' is not defined."),
         }
     }
 }
