@@ -1,13 +1,30 @@
 pub type Name = String;
 
 use nom::IResult;
+use std::collections::HashMap;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EnvValue {
+    Exp(Expression),
+    Func(Function),
+}
+
+pub type Environment = HashMap<Name, (Option<EnvValue>, Type)>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Function {
+    pub kind: Type,
+    pub params: Option<Vec<(Name, Type)>>,
+    pub body: Box<Statement>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,
     TReal,
     TString,
+    TFunction,
     TList(Box<Type>),
     TTuple(Vec<Type>),
 }
@@ -24,12 +41,14 @@ pub enum Expression {
     /* variable reference */
     Var(Name),
 
+    /* function call */
+    FuncCall(Name, Vec<Expression>),
+
     /* arithmetic expressions over numbers */
     Add(Box<Expression>, Box<Expression>),
     Sub(Box<Expression>, Box<Expression>),
     Mul(Box<Expression>, Box<Expression>),
     Div(Box<Expression>, Box<Expression>),
-    Rmd(Box<Expression>, Box<Expression>),
 
     /* boolean expressions over booleans */
     And(Box<Expression>, Box<Expression>),
@@ -48,11 +67,13 @@ pub enum Expression {
 pub enum Statement {
     VarDeclaration(Name),
     ValDeclaration(Name),
-    Assignment(Name, Box<Expression>),
+    Assignment(Name, Box<Expression>, Option<Type>),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
-    Block(Vec<Statement>), // For indented blocks
+    Block(Vec<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
+    FuncDef(Name, Function),
+    Return(Box<Expression>),
 }
 
 #[derive(Debug)]

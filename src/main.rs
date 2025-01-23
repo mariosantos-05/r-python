@@ -1,7 +1,8 @@
 //use crate::ir::ast::Expression;
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
-use crate::interpreter::interpreter::execute;
+use crate::interpreter::interpreter::{execute, ControlFlow};
+use crate::ir::ast::{EnvValue, Statement, Type};
 use crate::parser::parser::parse;
 use std::collections::HashMap;
 
@@ -24,11 +25,57 @@ fn run_test(name: &str, program: &str) {
             }
 
             let mut current_env = HashMap::new();
+
+            // Initialize variables
+            for stmt in &statements {
+                match stmt {
+                    Statement::Assignment(name, _, _) => {
+                        if !current_env.contains_key(name) {
+                            current_env.insert(name.clone(), (None, Type::TInteger));
+                        }
+                    }
+                    Statement::FuncDef(name, func) => {
+                        if !current_env.contains_key(name) {
+                            current_env.insert(name.clone(), (None, func.kind.clone()));
+                        }
+                    }
+                    Statement::IfThenElse(_, then_block, else_block) => {
+                        // Handle variables in if blocks
+                        if let Statement::Block(stmts) = &**then_block {
+                            for s in stmts {
+                                if let Statement::Assignment(name, _, _) = s {
+                                    if !current_env.contains_key(name) {
+                                        current_env.insert(name.clone(), (None, Type::TInteger));
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(else_stmt) = else_block {
+                            if let Statement::Block(stmts) = &**else_stmt {
+                                for s in stmts {
+                                    if let Statement::Assignment(name, _, _) = s {
+                                        if !current_env.contains_key(name) {
+                                            current_env
+                                                .insert(name.clone(), (None, Type::TInteger));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Execute statements
             for stmt in statements {
-                match execute(stmt, current_env) {
-                    Ok(new_env) => {
-                        println!("Environment after execution: {:?}", new_env);
+                match execute(stmt, &current_env, false) {
+                    Ok(ControlFlow::Continue(new_env)) => {
                         current_env = new_env;
+                    }
+                    Ok(ControlFlow::Return(value)) => {
+                        println!("Return value: {:?}", value);
+                        return;
                     }
                     Err(e) => {
                         println!("Execution error: {}", e);
@@ -119,4 +166,33 @@ else:
     d = c / 2
     e = d * 3"#;
     run_test("7. Mixed arithmetic and control flow", test7);
+
+    let test8 = r#"def add(a: TInteger, b: TInteger) -> TInteger:
+    return a + b
+
+x = 5
+y = 3
+result = add(x, y)"#;
+    run_test("8. Basic function definition and call", test8);
+
+    // Recursive Function Test
+    let test9 = r#"def fibonacci(n: TInteger) -> TInteger:
+    if n < 0:
+        return 0
+    if n <= 2:
+        return n - 1
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+fib = fibonacci(10)"#;
+    run_test("9. Recursive function", test9);
+
+    // Function with Multiple Returns Test
+    let test10 = r#"def max(a: TInteger, b: TInteger) -> TInteger:
+    if a > b:
+        return a
+    else:
+        return b
+
+result = max(15, 10)"#;
+    run_test("10. Function with multiple return paths", test10);
 }

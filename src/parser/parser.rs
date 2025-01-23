@@ -3,11 +3,13 @@ use nom::{
     bytes::complete::{tag, take_while1},
     character::complete::{char, digit1, line_ending, space0, space1},
     combinator::{map, map_res, opt},
-    multi::{many0, many1, separated_list1},
+    multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, tuple},
     IResult,
 };
 
+use crate::ir::ast::Function;
+use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 
 // Parse identifier
@@ -29,6 +31,7 @@ fn term(input: &str) -> IResult<&str, Expression> {
             arithmetic_expression,
             tuple((space0, char(')'))),
         ),
+        function_call, // Add function call parsing
         integer,
         map(identifier, |name| Expression::Var(name)),
     ))(input)
@@ -37,7 +40,13 @@ fn term(input: &str) -> IResult<&str, Expression> {
 //expression parser to include if statements
 fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = space0(input)?;
-    alt((if_statement, assignment, declaration))(input)
+    alt((
+        function_def,
+        if_statement,
+        return_statement,
+        assignment,
+        declaration,
+    ))(input)
 }
 
 // Parse basic expressions
@@ -137,10 +146,11 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
         Statement::IfThenElse(
             Box::new(condition),
             Box::new(Statement::Block(then_block)),
-            else_block.map(|stmts| Box::new(Statement::Block(stmts))), // Changed this line
+            else_block.map(|stmts| Box::new(Statement::Block(stmts))),
         ),
     ))
 }
+
 fn declaration(input: &str) -> IResult<&str, Statement> {
     let (input, keyword) = alt((tag("var"), tag("val")))(input)?;
     let (input, _) = space1(input)?;
@@ -158,29 +168,98 @@ fn declaration(input: &str) -> IResult<&str, Statement> {
 
 // Parse assignment statements
 fn assignment(input: &str) -> IResult<&str, Statement> {
-    let (input, _) = space0(input)?;
     let (input, name) = identifier(input)?;
     let (input, _) = delimited(space0, char('='), space0)(input)?;
     let (input, expr) = expression(input)?;
-    let (input, _) = space0(input)?;
 
     Ok((
         input,
         Statement::Assignment(
-            name, // No longer need to Box the name
+            name,
             Box::new(expr),
+            None, // Add Option<Type> for type annotations
         ),
     ))
 }
+
+fn parse_type(type_name: &str) -> Type {
+    match type_name {
+        "TInteger" => Type::TInteger,
+        "TBool" => Type::TBool,
+        "TReal" => Type::TReal,
+        _ => Type::TInteger, // Default case
+    }
+}
+
+// function definition parsing
+fn function_def(input: &str) -> IResult<&str, Statement> {
+    let (input, _) = tag("def")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, name) = identifier(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, params) = separated_list0(
+        delimited(space0, char(','), space0),
+        tuple((
+            identifier,
+            preceded(tuple((space0, char(':'), space0)), identifier),
+        )),
+    )(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = char(')')(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = tag("->")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, return_type) = identifier(input)?;
+    let (input, _) = space0(input)?;
+    let (input, _) = char(':')(input)?;
+    let (input, body) = indented_block(input)?;
+
+    Ok((
+        input,
+        Statement::FuncDef(
+            name,
+            Function {
+                kind: parse_type(&return_type),
+                params: Some(
+                    params
+                        .into_iter()
+                        .map(|(name, type_name)| (name, parse_type(&type_name)))
+                        .collect(),
+                ),
+                body: Box::new(Statement::Block(body)),
+            },
+        ),
+    ))
+}
+
+//return statement parsing
+fn return_statement(input: &str) -> IResult<&str, Statement> {
+    let (input, _) = tag("return")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, expr) = expression(input)?;
+    Ok((input, Statement::Return(Box::new(expr))))
+}
+
 // Parse multiple statements
 pub fn parse_statements(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = space0(input)?; // Handle initial whitespace
     let (input, statements) = separated_list1(
-        many1(line_ending), // Require at least one newline between statements
-        statement,          // Use statement directly instead of limited alternatives
+        many1(tuple((space0, line_ending, space0))), // Require at least one newline
+        statement, // Use statement directly instead of limited alternatives
     )(input)?;
     let (input, _) = space0(input)?; // Handle trailing whitespace
     Ok((input, statements))
+}
+
+// function call parsing
+fn function_call(input: &str) -> IResult<&str, Expression> {
+    let (input, name) = identifier(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, args) = separated_list0(delimited(space0, char(','), space0), expression)(input)?;
+    let (input, _) = char(')')(input)?;
+
+    Ok((input, Expression::FuncCall(name, args)))
 }
 
 // Main parse function
@@ -201,8 +280,9 @@ mod tests {
         let (rest, stmt) = assignment(input).unwrap();
         assert_eq!(rest, "");
         match stmt {
-            Statement::Assignment(name, expr) => {
-                assert_eq!(name, "x"); // Direct string comparison
+            Statement::Assignment(name, expr, _type) => {
+                // Added _type
+                assert_eq!(name, "x");
                 match *expr {
                     Expression::CInt(val) => assert_eq!(val, 42),
                     _ => panic!("Expected CInt"),
@@ -227,7 +307,8 @@ mod tests {
         assert_eq!(rest, "");
 
         match &stmts[0] {
-            Statement::Assignment(name, expr) => {
+            Statement::Assignment(name, expr, _type) => {
+                // Added _type
                 assert_eq!(name, "x");
                 match **expr {
                     Expression::Add(_, _) => (),
@@ -247,7 +328,8 @@ mod tests {
 
         // Verify first statement is assignment
         match &stmts[0] {
-            Statement::Assignment(name, expr) => {
+            Statement::Assignment(name, expr, _type) => {
+                // Added _type
                 assert_eq!(name, "x");
                 assert!(matches!(**expr, Expression::CInt(10)));
             }
@@ -265,7 +347,7 @@ mod tests {
                     Statement::Block(ref stmts) => {
                         assert_eq!(stmts.len(), 1);
                         match &stmts[0] {
-                            Statement::Assignment(name, expr) => {
+                            Statement::Assignment(name, expr, _type) => {
                                 assert_eq!(name, "y");
                                 assert!(matches!(**expr, Expression::CInt(1)));
                             }
@@ -281,7 +363,7 @@ mod tests {
                         Statement::Block(ref stmts) => {
                             assert_eq!(stmts.len(), 1);
                             match &stmts[0] {
-                                Statement::Assignment(name, expr) => {
+                                Statement::Assignment(name, expr, _type) => {
                                     assert_eq!(name, "y");
                                     assert!(matches!(**expr, Expression::CInt(2)));
                                 }
@@ -313,7 +395,7 @@ mod tests {
                     Statement::Block(ref stmts) => {
                         assert_eq!(stmts.len(), 1);
                         match &stmts[0] {
-                            Statement::Assignment(name, expr) => {
+                            Statement::Assignment(name, expr, _type) => {
                                 assert_eq!(name, "y");
                                 assert!(matches!(**expr, Expression::CInt(1)));
                             }
@@ -329,7 +411,7 @@ mod tests {
                         Statement::Block(ref stmts) => {
                             assert_eq!(stmts.len(), 1);
                             match &stmts[0] {
-                                Statement::Assignment(name, expr) => {
+                                Statement::Assignment(name, expr, _type) => {
                                     assert_eq!(name, "y");
                                     assert!(matches!(**expr, Expression::CInt(2)));
                                 }
@@ -364,7 +446,7 @@ mod tests {
                     Statement::Block(ref stmts) => {
                         assert_eq!(stmts.len(), 1);
                         match &stmts[0] {
-                            Statement::Assignment(name, expr) => {
+                            Statement::Assignment(name, expr, _type) => {
                                 assert_eq!(name, "y");
                                 assert!(matches!(**expr, Expression::CInt(1)));
                             }
@@ -380,7 +462,7 @@ mod tests {
                         Statement::Block(ref stmts) => {
                             assert_eq!(stmts.len(), 1);
                             match &stmts[0] {
-                                Statement::Assignment(name, expr) => {
+                                Statement::Assignment(name, expr, _type) => {
                                     assert_eq!(name, "y");
                                     assert!(matches!(**expr, Expression::CInt(2)));
                                 }
@@ -404,7 +486,7 @@ mod tests {
         assert_eq!(stmts.len(), 2);
 
         match &stmts[0] {
-            Statement::Assignment(name, expr) => {
+            Statement::Assignment(name, expr, _type) => {
                 assert_eq!(&**name, "x");
                 match **expr {
                     Expression::CInt(42) => (),
@@ -415,7 +497,7 @@ mod tests {
         }
 
         match &stmts[1] {
-            Statement::Assignment(name, expr) => {
+            Statement::Assignment(name, expr, _type) => {
                 assert_eq!(&**name, "y");
                 match **expr {
                     Expression::CInt(10) => (),
@@ -425,11 +507,55 @@ mod tests {
             _ => panic!("Expected Assignment"),
         }
     }
+
     #[test]
     fn test_whitespace_handling() {
         let input = "   x    =    42   \n   y   =   10   ";
         let (rest, stmts) = parse(input).unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn test_function_definition() {
+        let input = r#"def add(x: TInteger, y: TInteger) -> TInteger:
+        return x + y"#;
+        let (rest, stmt) = function_def(input).unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Statement::FuncDef(name, func) => {
+                assert_eq!(name, "add");
+                assert_eq!(func.kind, Type::TInteger);
+                match func.params {
+                    Some(params) => {
+                        assert_eq!(params.len(), 2);
+                        assert_eq!(params[0].0, "x");
+                        assert_eq!(params[1].0, "y");
+                    }
+                    None => panic!("Expected Some params"),
+                }
+            }
+            _ => panic!("Expected FuncDef"),
+        }
+    }
+
+    #[test]
+    fn test_function_call() {
+        let input = "result = add(5, 3)";
+        let (rest, stmt) = assignment(input).unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Statement::Assignment(name, expr, _type) => {
+                assert_eq!(name, "result");
+                match *expr {
+                    Expression::FuncCall(func_name, args) => {
+                        assert_eq!(func_name, "add");
+                        assert_eq!(args.len(), 2);
+                    }
+                    _ => panic!("Expected FuncCall"),
+                }
+            }
+            _ => panic!("Expected Assignment"),
+        }
     }
 }
