@@ -10,6 +10,15 @@ pub enum Type {
     TTuple(Vec<Type>),
 }
 
+#[derive(Debug,PartialEq)]
+pub enum ValueConstructor{
+    Constructor(Name, Vec<Type>),
+}
+#[derive(Debug, PartialEq)]
+pub enum ADT {
+    DataType(Name, Vec<ValueConstructor>),
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     /* constants */
