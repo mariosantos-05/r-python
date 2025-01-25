@@ -1,14 +1,19 @@
-use crate::ir::ast::{EnvValue, Environment, Expression, Name, Statement};
-use crate::tc::type_checker::{check_stmt, ControlType};
+use crate::ir::ast::{Environment, Expression, Name, Statement, Function};
 
 type ErrorMessage = String;
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum EnvValue {
+    Exp(Expression),
+    Func(Function)
+}
+
 pub enum ControlFlow {
-    Continue(Environment),
+    Continue(Environment<EnvValue>),
     Return(EnvValue),
 }
 
-pub fn eval(exp: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     match exp {
         Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
         Expression::Sub(lhs, rhs) => sub(*lhs, *rhs, env),
@@ -31,42 +36,37 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage
 
 pub fn execute(
     stmt: Statement,
-    env: &Environment,
-    mut init: bool,
+    env: &Environment<EnvValue>,
 ) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
-
-    if init {
-        match check_stmt(stmt.clone(), &new_env, None)? {
-            ControlType::Continue(control_env) => new_env = control_env,
-            ControlType::Return(_) => unreachable!(),
-        }
-        init = false;
-    }
 
     match stmt {
         Statement::Assignment(name, exp, _) => {
             let value = eval(*exp, &new_env)?;
-            new_env.entry(name).and_modify(|e| e.0 = Some(value));
+            
+            new_env.insert_variable(name, value);
+
             Ok(ControlFlow::Continue(new_env))
         }
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
             let value = eval(*cond, &new_env)?;
-            match value {
-                EnvValue::Exp(Expression::CTrue) => execute(*stmt_then, &new_env, init),
-                EnvValue::Exp(Expression::CFalse) => match stmt_else {
-                    Some(else_statement) => execute(*else_statement, &new_env, init),
-                    None => Ok(ControlFlow::Continue(new_env)),
-                },
-                _ => unreachable!(),
+
+            if value == EnvValue::Exp(Expression::CTrue) {
+                execute(*stmt_then, &new_env)
+            } else {
+                match stmt_else {
+                    Some(stmt_else) => execute(*stmt_else, &new_env),
+                    None => Ok(ControlFlow::Continue(new_env))
+                }
             }
         }
         Statement::While(cond, stmt) => {
             let mut value = eval(*cond.clone(), &new_env)?;
+
             loop {
                 match value {
                     EnvValue::Exp(Expression::CTrue) => {
-                        match execute(*stmt.clone(), &new_env, init)? {
+                        match execute(*stmt.clone(), &new_env)? {
                             ControlFlow::Continue(control_env) => {
                                 new_env = control_env;
                                 value = eval(*cond.clone(), &new_env)?;
@@ -79,14 +79,18 @@ pub fn execute(
                 }
             }
         }
-        Statement::Sequence(s1, s2) => match execute(*s1, &new_env, init)? {
+        Statement::Sequence(s1, s2) => match execute(*s1, &new_env)? {
             ControlFlow::Continue(control_env) => {
                 new_env = control_env;
-                execute(*s2, &new_env, init)
+                execute(*s2, &new_env)
             }
             ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
         },
-        Statement::FuncDef(_, _) => Ok(ControlFlow::Continue(new_env)),
+        Statement::FuncDef(func) =>  {
+            new_env.insert_variable(func.name.clone(), EnvValue::Func(func));
+            
+            Ok(ControlFlow::Continue(new_env))
+        }
         Statement::Return(exp) => {
             let exp_value = eval(*exp, &new_env)?;
             Ok(ControlFlow::Return(exp_value))
@@ -95,31 +99,36 @@ pub fn execute(
     }
 }
 
-fn call(name: Name, args: Vec<Expression>, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     let mut new_env = env.clone();
-    match env.get(&name) {
-        Some((Some(EnvValue::Func(func)), _)) => {
-            if let Some(params) = &func.params {
-                for (arg, (param, param_type)) in args.iter().zip(params) {
-                    let arg_value = eval(arg.clone(), &new_env)?;
-                    new_env.entry(param.to_string()).and_modify(|e| {
-                        e.0 = Some(arg_value);
-                        e.1 = param_type.clone();
-                    });
-                }
-            }
 
-            match execute(*func.body.clone(), &new_env, false)? {
-                ControlFlow::Return(value) => Ok(value),
-                ControlFlow::Continue(_) => unreachable!(),
-            }
+    if let Ok(EnvValue::Func(func)) = lookup(name, &new_env) {
+        new_env.insert_frame(func.clone());
+
+        if let Some(params) = func.params.clone() {
+            for (arg, (param, _)) in args.iter().zip(params) {
+                let value = eval(arg.clone(), &new_env)?;
+                new_env.insert_variable(param, value);
+            }   
         }
-        _ => unreachable!(),
+
+        if let None = new_env.search_frame(func.name.clone()) {
+            new_env.insert_variable(func.name.clone(), EnvValue::Func(func.clone()));
+        }
+
+        match execute(*func.body.unwrap(), &new_env)? {
+            ControlFlow::Return(value) => {
+                new_env.remove_frame();
+                return Ok(value)
+            }
+            ControlFlow::Continue(_) => unreachable!()
+        }
     }
+    unreachable!()
 }
 
 fn is_constant(exp: Expression) -> bool {
-    match exp {
+    match exp { 
         Expression::CTrue => true,
         Expression::CFalse => true,
         Expression::CInt(_) => true,
@@ -129,10 +138,16 @@ fn is_constant(exp: Expression) -> bool {
     }
 }
 
-fn lookup(name: String, env: &Environment) -> Result<EnvValue, ErrorMessage> {
-    match env.get(&name) {
-        Some((Some(value), _)) => Ok(value.clone()),
-        _ => Err(format!("Variable {} not found", name)),
+fn lookup(name: String, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+    let mut curr_scope = env.scope_key();
+
+    loop {
+        let frame = env.get_frame(curr_scope.clone());
+
+        match frame.variables.get(&name) {
+            Some(value) => return Ok(value.clone()),
+            None => curr_scope = frame.parent_key.clone().unwrap()
+        }
     }
 }
 
@@ -140,7 +155,7 @@ fn lookup(name: String, env: &Environment) -> Result<EnvValue, ErrorMessage> {
 fn eval_binary_arith_op<F>(
     lhs: Expression,
     rhs: Expression,
-    env: &Environment,
+    env: &Environment<EnvValue>,
     op: F,
     error_msg: &str,
 ) -> Result<EnvValue, ErrorMessage>
@@ -166,7 +181,7 @@ where
     }
 }
 
-fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn add(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -176,7 +191,7 @@ fn add(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
     )
 }
 
-fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn sub(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -186,7 +201,7 @@ fn sub(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
     )
 }
 
-fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn mul(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -196,7 +211,7 @@ fn mul(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
     )
 }
 
-fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn div(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -210,7 +225,7 @@ fn div(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
 fn eval_binary_boolean_op<F>(
     lhs: Expression,
     rhs: Expression,
-    env: &Environment,
+    env: &Environment<EnvValue>,
     op: F,
     error_msg: &str,
 ) -> Result<EnvValue, ErrorMessage>
@@ -236,7 +251,7 @@ where
     }
 }
 
-fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn and(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -252,7 +267,7 @@ fn and(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
     )
 }
 
-fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn or(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -268,7 +283,7 @@ fn or(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, E
     )
 }
 
-fn not(lhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn not(lhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     let v = eval(lhs, env)?;
     match v {
         EnvValue::Exp(Expression::CTrue) => Ok(EnvValue::Exp(Expression::CFalse)),
@@ -281,7 +296,7 @@ fn not(lhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
 fn eval_binary_rel_op<F>(
     lhs: Expression,
     rhs: Expression,
-    env: &Environment,
+    env: &Environment<EnvValue>,
     op: F,
     error_msg: &str,
 ) -> Result<EnvValue, ErrorMessage>
@@ -307,7 +322,7 @@ where
     }
 }
 
-fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn eq(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -323,7 +338,7 @@ fn eq(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, E
     )
 }
 
-fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn gt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -339,7 +354,7 @@ fn gt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, E
     )
 }
 
-fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn lt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -355,7 +370,7 @@ fn lt(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, E
     )
 }
 
-fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn gte(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -371,7 +386,7 @@ fn gte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
     )
 }
 
-fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, ErrorMessage> {
+fn lte(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -389,8 +404,6 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<EnvValue, 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Function;
@@ -400,7 +413,8 @@ mod tests {
 
     #[test]
     fn eval_constant() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+        
         let c10 = CInt(10);
         let c20 = CInt(20);
 
@@ -410,112 +424,136 @@ mod tests {
 
     #[test]
     fn eval_add_expression1() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CInt(20);
         let add1 = Add(Box::new(c10), Box::new(c20));
+
         assert_eq!(eval(add1, &env), Ok(EnvValue::Exp(CInt(30))));
     }
 
     #[test]
     fn eval_add_expression2() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CInt(20);
         let c30 = CInt(30);
         let add1 = Add(Box::new(c10), Box::new(c20));
         let add2 = Add(Box::new(add1), Box::new(c30));
+
         assert_eq!(eval(add2, &env), Ok(EnvValue::Exp(CInt(60))));
     }
 
     #[test]
     fn eval_add_expression3() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CReal(20.5);
         let add1 = Add(Box::new(c10), Box::new(c20));
+
         assert_eq!(eval(add1, &env), Ok(EnvValue::Exp(CReal(30.5))));
     }
 
     #[test]
     fn eval_sub_expression1() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CInt(20);
         let sub1 = Sub(Box::new(c20), Box::new(c10));
+
         assert_eq!(eval(sub1, &env), Ok(EnvValue::Exp(CInt(10))));
     }
 
     #[test]
     fn eval_sub_expression2() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c100 = CInt(100);
         let c200 = CInt(300);
         let sub1 = Sub(Box::new(c200), Box::new(c100));
+
         assert_eq!(eval(sub1, &env), Ok(EnvValue::Exp(CInt(200))));
     }
 
     #[test]
     fn eval_sub_expression3() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c100 = CReal(100.5);
         let c300 = CInt(300);
         let sub1 = Sub(Box::new(c300), Box::new(c100));
+
         assert_eq!(eval(sub1, &env), Ok(EnvValue::Exp(CReal(199.5))));
     }
 
     #[test]
     fn eval_mul_expression1() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
+
         assert_eq!(eval(mul1, &env), Ok(EnvValue::Exp(CInt(200))));
     }
 
     #[test]
     fn eval_mul_expression2() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CReal(10.5);
         let c20 = CInt(20);
         let mul1 = Mul(Box::new(c10), Box::new(c20));
+
         assert_eq!(eval(mul1, &env), Ok(EnvValue::Exp(CReal(210.0))));
     }
 
     #[test]
     fn eval_div_expression1() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c20 = CInt(20);
         let div1 = Div(Box::new(c20), Box::new(c10));
+
         assert_eq!(eval(div1, &env), Ok(EnvValue::Exp(CInt(2))));
     }
 
     #[test]
     fn eval_div_expression2() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c3 = CInt(3);
         let div1 = Div(Box::new(c10), Box::new(c3));
+
         assert_eq!(eval(div1, &env), Ok(EnvValue::Exp(CInt(3))));
     }
 
     #[test]
     fn eval_div_expression3() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c3 = CInt(3);
         let c21 = CInt(21);
         let div1 = Div(Box::new(c21), Box::new(c3));
+
         assert_eq!(eval(div1, &env), Ok(EnvValue::Exp(CInt(7))));
     }
 
     #[test]
     fn eval_div_expression4() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let c10 = CInt(10);
         let c3 = CReal(3.0);
         let div1 = Div(Box::new(c10), Box::new(c3));
         let res = eval(div1, &env);
+
         match res {
             Ok(EnvValue::Exp(Expression::CReal(v))) => {
                 assert!(relative_eq!(v, 3.3333333333333335, epsilon = f64::EPSILON))
@@ -527,59 +565,53 @@ mod tests {
 
     #[test]
     fn eval_variable() {
-        let env = HashMap::from([
-            (String::from("x"), (Some(EnvValue::Exp(CInt(10))), TInteger)),
-            (String::from("y"), (Some(EnvValue::Exp(CInt(20))), TInteger)),
-        ]);
+        let mut env = Environment::new();
+        env.insert_variable("x".to_string(), EnvValue::Exp(CInt(10)));
+        env.insert_variable("y".to_string(), EnvValue::Exp(CInt(20)));
+
         let v1 = Var(String::from("x"));
         let v2 = Var(String::from("y"));
+
         assert_eq!(eval(v1, &env), Ok(EnvValue::Exp(CInt(10))));
         assert_eq!(eval(v2, &env), Ok(EnvValue::Exp(CInt(20))));
     }
 
     #[test]
     fn eval_expression_with_variables() {
-        let env = HashMap::from([
-            (String::from("a"), (Some(EnvValue::Exp(CInt(5))), TInteger)),
-            (String::from("b"), (Some(EnvValue::Exp(CInt(3))), TInteger)),
-        ]);
+        let mut env = Environment::new();
+        env.insert_variable("a".to_string(), EnvValue::Exp(CInt(5)));
+        env.insert_variable("b".to_string(), EnvValue::Exp(CInt(3)));
+
         let expr = Mul(
             Box::new(Var(String::from("a"))),
             Box::new(Add(Box::new(Var(String::from("b"))), Box::new(CInt(2)))),
         );
+
         assert_eq!(eval(expr, &env), Ok(EnvValue::Exp(CInt(25))));
     }
 
     #[test]
     fn eval_nested_expressions() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let expr = Add(
             Box::new(Mul(Box::new(CInt(2)), Box::new(CInt(3)))),
             Box::new(Sub(Box::new(CInt(10)), Box::new(CInt(4)))),
         );
+
         assert_eq!(eval(expr, &env), Ok(EnvValue::Exp(CInt(12))));
     }
 
     #[test]
-    fn eval_variable_not_found() {
-        let env = HashMap::new();
-        let var_expr = Var(String::from("z"));
-
-        assert_eq!(
-            eval(var_expr, &env),
-            Err(String::from("Variable z not found"))
-        );
-    }
-
-    #[test]
     fn execute_assignment() {
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
+
         let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)), Some(TInteger));
 
-        match execute(assign_stmt, &env, true) {
+        match execute(assign_stmt, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
-                new_env.get("x"),
-                Some(&(Some(EnvValue::Exp(CInt(42))), TInteger))
+                new_env.search_frame("x".to_string()),
+                Some(&EnvValue::Exp(CInt(42)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -600,7 +632,8 @@ mod tests {
          * After executing this program, 'x' must be zero and
          * 'y' must be 55.
          */
-        let env = HashMap::new();
+
+        let env: Environment<EnvValue> = Environment::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(10)), Some(TInteger));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)), Some(TInteger));
@@ -628,15 +661,15 @@ mod tests {
         let seq2 = Sequence(Box::new(a2), Box::new(while_statement));
         let program = Sequence(Box::new(a1), Box::new(seq2));
 
-        match execute(program, &env, true) {
+        match execute(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
-                    new_env.get("y"),
-                    Some(&(Some(EnvValue::Exp(CInt(55))), TInteger))
+                    new_env.search_frame("y".to_string()),
+                    Some(&EnvValue::Exp(CInt(55)))
                 );
                 assert_eq!(
-                    new_env.get("x"),
-                    Some(&(Some(EnvValue::Exp(CInt(0))), TInteger))
+                    new_env.search_frame("x".to_string()),
+                    Some(&EnvValue::Exp(CInt(0)))
                 );
             }
             Ok(ControlFlow::Return(_)) => assert!(false),
@@ -657,7 +690,8 @@ mod tests {
          *
          * After executing, 'y' should be 1.
          */
-        let env = HashMap::new();
+
+        let env: Environment<EnvValue> = Environment::new();
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
         let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)), Some(TInteger));
@@ -672,10 +706,10 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)), Some(TInteger));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, &env, true) {
+        match execute(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
-                new_env.get("y"),
-                Some(&(Some(EnvValue::Exp(CInt(1))), TInteger))
+                new_env.search_frame("y".to_string()),
+                Some(&EnvValue::Exp(CInt(1)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -699,7 +733,7 @@ mod tests {
          * After executing, 'y' should be 2.
          */
 
-        let env = HashMap::new();
+        let env: Environment<EnvValue> = Environment::new();
 
         let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
         let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)), None);
@@ -728,10 +762,10 @@ mod tests {
         let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)), Some(TInteger));
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
-        match execute(program, &env, true) {
+        match execute(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
-                new_env.get("y"),
-                Some(&(Some(EnvValue::Exp(CInt(2))), TInteger))
+                new_env.search_frame("y".to_string()),
+                Some(&EnvValue::Exp(CInt(2)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
@@ -844,7 +878,8 @@ mod tests {
          *
          * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
          */
-        let env = HashMap::new();
+       
+        let env: Environment<EnvValue> = Environment::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(5)), Some(TInteger));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)), Some(TInteger));
@@ -859,33 +894,33 @@ mod tests {
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
-        match execute(program, &env, true) {
+        match execute(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
-                    new_env.get("x"),
-                    Some(&(Some(EnvValue::Exp(CInt(5))), TInteger))
+                    new_env.search_frame("x".to_string()),
+                    Some(&EnvValue::Exp(CInt(5)))
                 );
                 assert_eq!(
-                    new_env.get("y"),
-                    Some(&(Some(EnvValue::Exp(CInt(0))), TInteger))
+                    new_env.search_frame("y".to_string()),
+                    Some(&EnvValue::Exp(CInt(0)))   
                 );
                 assert_eq!(
-                    new_env.get("z"),
-                    Some(&(Some(EnvValue::Exp(CInt(13))), TInteger))
+                    new_env.search_frame("z".to_string()),
+                    Some(&EnvValue::Exp(CInt(13)))
                 );
             }
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
         }
     }
-
+    
     #[test]
     fn recursive_func_def_call() {
         /*
          * Test for a recursive function
          *
          * > def fibonacci(n: TInteger) -> TInteger:
-         * >    if n < 0:
+         * >    if n < 1:
          * >        return 0
          * >
          * >    if n <= 2:
@@ -897,16 +932,17 @@ mod tests {
          *
          * After executing, 'fib' should be 34.
          */
-        let env = Environment::new();
+        
+        let env: Environment<EnvValue> = Environment::new();
 
         let func = FuncDef(
-            "fibonacci".to_string(),
             Function {
-                kind: TInteger,
+                name: "fibonacci".to_string(),
+                kind: Some(TInteger),
                 params: Some(vec![("n".to_string(), TInteger)]),
-                body: Box::new(Sequence(
+                body: Some(Box::new(Sequence(
                     Box::new(IfThenElse(
-                        Box::new(LT(Box::new(Var("n".to_string())), Box::new(CInt(0)))),
+                        Box::new(LT(Box::new(Var("n".to_string())), Box::new(CInt(1)))),
                         Box::new(Return(Box::new(CInt(0)))),
                         None,
                     )),
@@ -930,7 +966,7 @@ mod tests {
                             )),
                         )))),
                     )),
-                )),
+                )))
             },
         );
 
@@ -943,10 +979,10 @@ mod tests {
             )),
         );
 
-        match execute(program, &env, true) {
+        match execute(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
-                new_env.get("fib"),
-                Some(&(Some(EnvValue::Exp(CInt(34))), TInteger))
+                new_env.search_frame("fib".to_string()),
+                Some(&EnvValue::Exp(CInt(34)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
             Err(s) => assert!(false, "{}", s),
