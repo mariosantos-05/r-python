@@ -29,6 +29,9 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::COk(e) => check_result_ok(*e, env),
         Expression::CErr(e) => check_result_err(*e, env),
+        Expression::CJust(e) => check_maybe_just(*e,env),
+        Expression::CNothing => check_maybe_nothing(),
+        Expression::IsNothing(e) => check_is_nothing(*e, env),        
         Expression::Unwrap(e) => check_unwrap(*e, env),
 
         _ => Err(String::from("not implemented yet")),
@@ -123,8 +126,29 @@ fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage
     }
 }
 
+fn check_maybe_just(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let exp_type = check(exp, env)?;
+    Ok(Type::TMaybe(Box::new(exp_type)))
+}
+
+fn check_maybe_nothing() -> Result<Type, ErrorMessage> {
+    Ok(Type::TMaybe(Box::new(Type::TAny)))
+}
+
+fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let exp_type = check(exp, env)?;
+    
+    match exp_type {
+        Type::TMaybe(_) => Ok(Type::TBool),
+        _ => Err(String::from("[Type Error] expecting a maybe type value.")),
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
+    use std::hash::Hash;
+
     use super::*;
 
     use crate::ir::ast::Expression::*;
@@ -284,7 +308,53 @@ mod tests {
         );
     }
 
-    /* Descomentar quando implementar MAYBE
+    #[test]
+    fn check_just_integer(){
+        let env = HashMap::new();
+        let c5 = CInt(5);
+        let just = CJust(Box::new(c5));
+
+        assert_eq!(
+            check(just, &env),
+            Ok(TMaybe(Box::new(TInteger)))
+        )
+
+    }
+
+    #[test]
+    fn check_nothing(){
+        let env = HashMap::new();
+
+        assert_eq!(
+            check(CNothing, &env),
+            Ok(TMaybe(Box::new(TAny)))
+        );
+
+    }
+
+    #[test]
+    fn check_is_nothing_on_maybe(){
+        let env = HashMap::new();
+        let c5= CInt(5);
+        let just = CJust(Box::new(c5));
+        let is_nothing = IsNothing(Box::new(just));
+
+        assert_eq!(check(is_nothing, &env), Ok(TBool));
+    }
+
+
+    #[test]
+    fn check_is_nothing_type_error() {
+        let env = HashMap::new();
+        let c5 = CInt(5);
+        let is_nothing = IsNothing(Box::new(c5));
+        
+        assert_eq!(
+            check(is_nothing, &env),
+            Err(String::from("[Type Error] expecting a maybe type value."))
+        );
+    }
+ 
     #[test]
     fn check_unwrap_maybe() {
         let env = HashMap::new();
@@ -297,8 +367,19 @@ mod tests {
             Ok(TInteger)
         );
     }
-    */
-    
+
+    #[test]
+    fn check_unwrap_maybe_type_error() {
+        let env = HashMap::new();
+        let c5 = CInt(5);
+        let u = Unwrap(Box::new(c5));
+        
+        assert_eq!(
+            check(u, &env),
+            Err(String::from("[Type Error] expecting a maybe or result type value."))
+        );
+    }
+
     #[test]
     fn check_unwrap_result() {
         let env = HashMap::new();
@@ -311,4 +392,5 @@ mod tests {
             Ok(TBool)
         );
     }
+
 }
