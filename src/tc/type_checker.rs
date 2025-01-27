@@ -30,7 +30,7 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::COk(e) => check_result_ok(*e, env),
         Expression::CErr(e) => check_result_err(*e, env),
         Expression::CJust(e) => check_maybe_just(*e,env),
-        Expression::CNothing => check_maybe_nothing(),
+        Expression::CNothing => Ok(Type::TMaybe(Box::new(Type::TAny))),
         Expression::IsNothing(e) => check_is_nothing(*e, env),        
         Expression::Unwrap(e) => check_unwrap(*e, env),
 
@@ -112,27 +112,14 @@ fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage
 
     match exp_type {
         Type::TMaybe(t) => Ok(*t),
-        Type::TResult(tl, tr) => {
-            if *tl == Type::TAny {
-                return Ok(*tr);
-            } else if *tr == Type::TAny {
-                return Ok(*tl);
-            }
-            return Ok(Type::TAny);
-        }
-        _ => Err(String::from(
-            "[Type Error] expecting a maybe or result type value.",
-        )),
+        Type::TResult(tl, _) => Ok(*tl),
+        _ => Err(String::from("[Type Error] expecting a maybe or result type value.")),
     }
 }
 
 fn check_maybe_just(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
     Ok(Type::TMaybe(Box::new(exp_type)))
-}
-
-fn check_maybe_nothing() -> Result<Type, ErrorMessage> {
-    Ok(Type::TMaybe(Box::new(Type::TAny)))
 }
 
 fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
@@ -147,8 +134,6 @@ fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMes
 
 #[cfg(test)]
 mod tests {
-    use std::hash::Hash;
-
     use super::*;
 
     use crate::ir::ast::Expression::*;

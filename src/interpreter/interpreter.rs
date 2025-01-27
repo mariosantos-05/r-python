@@ -291,10 +291,11 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
 fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     match v {
-        /* CHECAGEM DO MAYBE */
+        Expression::CJust(e) => Ok(*e),
+        // Expression::CNothing => Ok(CErr("")),
         Expression::COk(e) => Ok(*e),
-        Expression::CErr(_) => Ok(v),
-        _ => Err(String::from("'unwrap' is only defined for Just, Nothing, Ok and Err.")),
+        // Expression::CErr(_) => Ok(v),
+        _ => Err(String::from("'unwrap' is expects a Just or Ok.")),
     }
 }
 
@@ -379,7 +380,35 @@ mod tests {
         let err = CErr(Box::new(c1));
         let u = Unwrap(Box::new(err));
 
-        assert_eq!(eval(u, &env), Ok(CErr(Box::new(CInt(1)))));
+        // assert_eq!(eval(u, &env), Ok(CErr(Box::new(CInt(1)))));
+        let res = eval(u, &env);
+        match res {
+            Ok(_) => assert!(false, "An error was expected"),
+            Err(_) => assert!(true),
+        }
+    }
+
+    #[test]
+    fn eval_unwrap_just() {
+        let env = HashMap::new();
+        let c5 = CInt(5);
+        let maybe = CJust(Box::new(c5));
+        let u = Unwrap(Box::new(maybe));
+
+        assert_eq!(eval(u, &env), Ok(CInt(5)));
+    }
+
+    #[test]
+    fn eval_unwrap_nothing() {
+        let env = HashMap::new();
+        let nothing = CErr(Box::new(CNothing));
+        let u = Unwrap(Box::new(nothing));
+
+        let res = eval(u, &env);
+        match res {
+            Ok(_) => assert!(false, "An error was expected"),
+            Err(_) => assert!(true),
+        }
     }
 
     #[test]
