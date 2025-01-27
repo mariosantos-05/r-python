@@ -8,9 +8,9 @@ pub enum Type {
     TString,
     TList(Box<Type>),
     TTuple(Vec<Type>),
-    Maybe(Box<Type>),
-    Result(Box<Type>),
-    Any,
+    TMaybe(Box<Type>),
+    TResult(Box<Type>, Box<Type>), // Ok, Error
+    TAny,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -50,7 +50,7 @@ pub enum Expression {
 
     CJust(Box<Expression>),
     CNothing,
-    
+
     Unwrap(Box<Expression>),
     IsError(Box<Expression>),
     IsNothing(Box<Expression>),

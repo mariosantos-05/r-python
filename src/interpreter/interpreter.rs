@@ -22,6 +22,7 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
+        Expression::Unwrap(e) => unwrap(*e,env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -34,6 +35,10 @@ fn is_constant(exp: Expression) -> bool {
         Expression::CInt(_) => true,
         Expression::CReal(_) => true,
         Expression::CString(_) => true,
+        Expression::CJust(_) => true,
+        Expression::CNothing => true,
+        Expression::COk(_) => true,
+        Expression::CErr(_) => true,
         _ => false,
     }
 }
@@ -283,6 +288,16 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
+fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    let v = eval(exp, env)?;
+    match v {
+        /* CHECAGEM DO MAYBE */
+        Expression::COk(e) => Ok(*e),
+        Expression::CErr(_) => Ok(v),
+        _ => Err(String::from("'unwrap' is only defined for Just, Nothing, Ok and Err.")),
+    }
+}
+
 pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
@@ -333,6 +348,38 @@ mod tests {
 
         assert_eq!(eval(c10, &env), Ok(CInt(10)));
         assert_eq!(eval(c20, &env), Ok(CInt(20)));
+    }
+
+    #[test]
+    fn eval_constant_ok_err() {
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let ok = COk(Box::new(c10));
+        let c20 = CInt(20);
+        let err = CErr(Box::new(c20));
+
+        assert_eq!(eval(ok, &env), Ok(COk(Box::new(CInt(10)))));
+        assert_eq!(eval(err, &env), Ok(CErr(Box::new(CInt(20)))));
+    }
+
+    #[test]
+    fn eval_unwrap_result_ok() {
+        let env = HashMap::new();
+        let c10 = CInt(10);
+        let ok = COk(Box::new(c10));
+        let u = Unwrap(Box::new(ok));
+
+        assert_eq!(eval(u, &env), Ok(CInt(10)));
+    }
+
+    #[test]
+    fn eval_unwrap_result_err() {
+        let env = HashMap::new();
+        let c1 = CInt(1);
+        let err = CErr(Box::new(c1));
+        let u = Unwrap(Box::new(err));
+
+        assert_eq!(eval(u, &env), Ok(CErr(Box::new(CInt(1)))));
     }
 
     #[test]

@@ -26,7 +26,11 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::GT(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::LT(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::GTE(l, r) => check_bin_relational_expression(*l, *r, env),
-        Expression::LTE(l, r) => check_bin_boolean_expression(*l, *r, env),
+        Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
+        Expression::COk(e) => check_result_ok(*e, env),
+        Expression::CErr(e) => check_result_err(*e, env),
+        Expression::Unwrap(e) => check_unwrap(*e, env),
+
         _ => Err(String::from("not implemented yet")),
     }
 }
@@ -85,6 +89,37 @@ fn check_bin_relational_expression(
         (Type::TReal, Type::TInteger) => Ok(Type::TBool),
         (Type::TReal, Type::TReal) => Ok(Type::TBool),
         _ => Err(String::from("[Type Error] expecting numeric type values.")),
+    }
+}
+
+fn check_result_ok(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let exp_type = check(exp, env)?;
+
+    return Ok(Type::TResult(Box::new(exp_type), Box::new(Type::TAny)));
+}
+
+fn check_result_err(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let exp_type = check(exp, env)?;
+
+    return Ok(Type::TResult(Box::new(Type::TAny), Box::new(exp_type)));
+}
+
+fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let exp_type = check(exp, env)?;
+
+    match exp_type {
+        Type::TMaybe(t) => Ok(*t),
+        Type::TResult(tl, tr) => {
+            if *tl == Type::TAny {
+                return Ok(*tr);
+            } else if *tr == Type::TAny {
+                return Ok(*tl);
+            }
+            return Ok(Type::TAny);
+        }
+        _ => Err(String::from(
+            "[Type Error] expecting a maybe or result type value.",
+        )),
     }
 }
 
@@ -222,6 +257,58 @@ mod tests {
         assert_eq!(
             check(or, &env),
             Err(String::from("[Type Error] expecting boolean type values."))
+        );
+    }
+
+    #[test]
+    fn check_ok_result() {
+        let env = HashMap::new();
+        let f10 = CReal(10.0);
+        let ok = COk(Box::new(f10));
+
+        assert_eq!(
+            check(ok, &env),
+            Ok(TResult(Box::new(TReal), Box::new(TAny)))
+        );
+    }
+
+    #[test]
+    fn check_err_result() {
+        let env = HashMap::new();
+        let ecode = CInt(1);
+        let err = CErr(Box::new(ecode));
+
+        assert_eq!(
+            check(err, &env),
+            Ok(TResult(Box::new(TAny),Box::new(TInteger)))
+        );
+    }
+
+    /* Descomentar quando implementar MAYBE
+    #[test]
+    fn check_unwrap_maybe() {
+        let env = HashMap::new();
+        let c5 = CInt(5);
+        let some = CJust(Box::new(c5));
+        let u = Unwrap(Box::new(some));
+
+        assert_eq!(
+            check(u, &env),
+            Ok(TInteger)
+        );
+    }
+    */
+    
+    #[test]
+    fn check_unwrap_result() {
+        let env = HashMap::new();
+        let bool = CTrue;
+        let ok = COk(Box::new(bool));
+        let u = Unwrap(Box::new(ok));
+
+        assert_eq!(
+            check(u, &env),
+            Ok(TBool)
         );
     }
 }
