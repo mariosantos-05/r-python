@@ -31,7 +31,8 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::CErr(e) => check_result_err(*e, env),
         Expression::CJust(e) => check_maybe_just(*e,env),
         Expression::CNothing => Ok(Type::TMaybe(Box::new(Type::TAny))),
-        Expression::IsNothing(e) => check_is_nothing(*e, env),        
+        Expression::IsError(e) => check_is_error(*e, env),
+        Expression::IsNothing(e) => check_is_nothing(*e, env),
         Expression::Unwrap(e) => check_unwrap(*e, env),
 
         _ => Err(String::from("not implemented yet")),
@@ -120,6 +121,15 @@ fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage
 fn check_maybe_just(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
     Ok(Type::TMaybe(Box::new(exp_type)))
+}
+
+fn check_is_error(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+    let v = check(exp, env)?;
+
+    match v {
+        Type::TResult(_,_) => Ok(Type::TBool),
+        _ => Err(String::from("[Type Error] expecting a result type value.")),
+    }
 }
 
 fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
@@ -303,7 +313,31 @@ mod tests {
             check(just, &env),
             Ok(TMaybe(Box::new(TInteger)))
         )
+    }
 
+    #[test]
+    fn check_is_error_result_positive() {
+        let env = HashMap::new();
+        let bool = CTrue;
+        let ok = COk(Box::new(bool));
+        let ie = IsError(Box::new(ok));
+
+        assert_eq!(
+            check(ie, &env),
+            Ok(TBool)
+        );
+    }
+
+    #[test]
+    fn check_is_error_result_error() {
+        let env = HashMap::new();
+        let bool = CTrue;
+        let ie = IsError(Box::new(bool));
+
+        assert_eq!(
+            check(ie, &env),
+            Err(String::from("[Type Error] expecting a result type value."))
+        );
     }
 
     #[test]
@@ -339,7 +373,7 @@ mod tests {
             Err(String::from("[Type Error] expecting a maybe type value."))
         );
     }
- 
+    
     #[test]
     fn check_unwrap_maybe() {
         let env = HashMap::new();

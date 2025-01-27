@@ -22,6 +22,7 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
+        Expression::IsError(e) => iserror(*e,env),
         Expression::Unwrap(e) => unwrap(*e,env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
@@ -299,6 +300,15 @@ fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage
     }
 }
 
+fn iserror(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    let v = eval(exp, env)?;
+    match v {
+        Expression::CErr(_) => Ok(Expression::CTrue),
+        Expression::COk(_) => Ok(Expression::CFalse),
+        _ => Err(String::from("'is_error' is only defined for Ok and Err.")),
+    }
+}
+
 pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
@@ -409,6 +419,35 @@ mod tests {
             Ok(_) => assert!(false, "An error was expected"),
             Err(_) => assert!(true),
         }
+    }
+
+    #[test]
+    fn eval_is_error_result_true() {
+        let env = HashMap::new();
+        let aux = CInt(2);
+        let e = Expression::CErr(Box::new(aux));
+        let ie = IsError(Box::new(e));
+
+        assert_eq!(eval(ie, &env), Ok(Expression::CTrue));
+    }
+
+    #[test]
+    fn eval_is_error_result_false() {
+        let env = HashMap::new();
+        let aux = CInt(2);
+        let r = COk(Box::new(aux));
+        let ie = IsError(Box::new(r));
+
+        assert_eq!(eval(ie, &env), Ok(Expression::CFalse));
+    }
+
+    #[test]
+    fn eval_is_error_result_error() {
+        let env = HashMap::new();
+        let aux = CInt(2);
+        let ie = IsError(Box::new(aux));
+
+        assert_eq!(eval(ie, &env), Err(String::from("'is_error' is only defined for Ok and Err.")));
     }
 
     #[test]
