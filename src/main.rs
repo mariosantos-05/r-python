@@ -2,7 +2,7 @@
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
 use crate::interpreter::interpreter::{execute, ControlFlow};
-use crate::ir::ast::{EnvValue, Statement, Type};
+use crate::ir::ast::{Statement, Type};
 use crate::parser::parser::parse;
 use std::collections::HashMap;
 
@@ -195,4 +195,96 @@ fib = fibonacci(10)"#;
 
 result = max(15, 10)"#;
     run_test("10. Function with multiple return paths", test10);
+
+    // Test 11: Left recursion and operator precedence
+    let test11 = r#"a = 1 + 2 + 3
+b = 1 - 2 - 3
+c = 2 * 3 * 4
+d = 12 / 4 / 2
+e = 1 + 2 * 3
+f = (1 + 2) * 3
+g = 2 * 3 + 4 * 5
+h = (2 + 3) * (4 + 5)"#;
+    run_test("11. Left recursion and operator precedence", test11);
+
+    // Test 12: Complex expression chains
+    let test12 = r#"x = 1
+y = x + 2 + 3 * 4 + 5
+z = (x + y) * 2 - 3"#;
+    run_test("12. Complex expression chains", test12);
+
+    // Test 13: Mixed operator precedence
+    let test13 = r#"a = 10
+b = 2
+c = 3
+result = a + b * c - (a / b) + c * (a - b)"#;
+    run_test("13. Mixed operator precedence", test13);
+
+    // Test 14: Deeply nested expressions
+    let test14 = r#"x = 2
+y = 3
+z = ((x + y) * (x - y)) / (x + 1) + y * (x + y)"#;
+    run_test("14. Deeply nested expressions", test14);
+
+    // Test 15: Basic negative numbers
+    let test15 = r#"a = -5
+b = -10
+c = -15
+result = a + b + c"#;
+    run_test("15. Basic negative numbers", test15);
+
+    // Test 16: Mixed positive and negative operations
+    let test16 = r#"x = 10
+y = -3
+z = x + y * -2
+w = -x + (-y * 2)"#;
+    run_test("16. Mixed positive and negative operations", test16);
+
+    // Test 17: Negative numbers in complex expressions
+    let test17 = r#"a = -2
+b = 3
+c = (-a * b) + (-4 * -5)
+d = (a + -b) * (-2 + b)"#;
+    run_test("17. Complex expressions with negatives", test17);
+
+    // Test 18: Negative numbers in function calls
+    let test18 = r#"def subtract(a: TInteger, b: TInteger) -> TInteger:
+    return a - b
+
+result1 = subtract(-10, -3)
+result2 = subtract(5, -3)
+result3 = subtract(-5, 3)"#;
+    run_test("18. Function calls with negative numbers", test18);
+
+    // Test 19: Boolean Operations
+    let test19 = r#"a = True
+b = False
+c = True and False
+d = True or False
+e = not False
+f = not (True and False) or True"#;
+    run_test("19. Boolean Operations", test19);
+
+    // Test 20: Real Numbers
+    let test20 = r#"x = 3.14
+y = -2.5
+z = x + y
+w = x * 2.0
+v = 10.5 / 2.1"#;
+    run_test("20. Real Number Operations", test20);
+
+    // Test 21: String Operations
+    let test21 = r#"name = "Hello"
+greeting = "World"
+message = "Test ""#;
+    run_test("21. String Operations", test21);
+
+    // Test 22: Mixed Boolean Operations
+    let test22 = r#"x = 10
+y = 5
+result1 = x > y and True
+result2 = (x < y) or True
+result3 = not (x <= y)
+result4 = (x >= y) and (not False)"#;
+    run_test("22. Mixed Boolean Operations", test22);
 }

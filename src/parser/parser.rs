@@ -1,12 +1,15 @@
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while1},
+    bytes::complete::{tag, take_while, take_while1},
     character::complete::{char, digit1, line_ending, space0, space1},
-    combinator::{map, map_res, opt},
+    combinator::{map, map_res, opt, recognize},
+    error::Error,
     multi::{many0, many1, separated_list0, separated_list1},
-    sequence::{delimited, preceded, tuple},
+    sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
+
+type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 
 use crate::ir::ast::Function;
 use crate::ir::ast::Type;
@@ -20,21 +23,46 @@ fn identifier(input: &str) -> IResult<&str, Name> {
 
 // Parse integer literals
 fn integer(input: &str) -> IResult<&str, Expression> {
-    map_res(digit1, |s: &str| s.parse::<i32>().map(Expression::CInt))(input)
+    map_res(
+        pair(opt(preceded(space0, char('-'))), preceded(space0, digit1)),
+        |(sign, digits): (Option<char>, &str)| {
+            digits.parse::<i32>().map(|num| {
+                if sign.is_some() {
+                    Expression::CInt(-num)
+                } else {
+                    Expression::CInt(num)
+                }
+            })
+        },
+    )(input)
 }
 
 //term parser for arithmetic
-fn term(input: &str) -> IResult<&str, Expression> {
-    alt((
-        delimited(
-            tuple((char('('), space0)),
-            arithmetic_expression,
-            tuple((space0, char(')'))),
-        ),
-        function_call, // Add function call parsing
-        integer,
-        map(identifier, |name| Expression::Var(name)),
-    ))(input)
+fn term(input: &str) -> ParseResult<Expression> {
+    let (mut input, mut expr) = factor(input)?;
+
+    loop {
+        let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
+            space0::<&str, Error<&str>>,
+            alt((tag("*"), tag("/"))),
+            space0::<&str, Error<&str>>,
+        )(input);
+
+        match op_result {
+            Ok((new_input, op)) => {
+                let (newer_input, factor2) = factor(new_input)?;
+                expr = match op {
+                    "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
+                    "/" => Expression::Div(Box::new(expr), Box::new(factor2)),
+                    _ => unreachable!(),
+                };
+                input = newer_input;
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok((input, expr))
 }
 
 //expression parser to include if statements
@@ -52,17 +80,20 @@ fn statement(input: &str) -> IResult<&str, Statement> {
 // Parse basic expressions
 fn expression(input: &str) -> IResult<&str, Expression> {
     alt((
+        boolean_expression,
         comparison_expression,
         arithmetic_expression,
+        real,
         integer,
-        map(identifier, |name| Expression::Var(name)),
+        string,
+        map(identifier, Expression::Var),
     ))(input)
 }
 
-// Parse arithmetic operators
-fn operator(input: &str) -> IResult<&str, &str> {
-    alt((tag("+"), tag("-"), tag("*"), tag("/")))(input)
-}
+// Parse arithmetic operators (unused)
+//fn operator(input: &str) -> IResult<&str, &str> {
+//alt((tag("+"), tag("-"), tag("*"), tag("/")))(input)
+//}
 
 // Add comparison operator parsing
 fn comparison_operator(input: &str) -> IResult<&str, &str> {
@@ -98,23 +129,120 @@ fn comparison_expression(input: &str) -> IResult<&str, Expression> {
 }
 
 // Parse expressions with operator precedence
-fn arithmetic_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, first) = term(input)?;
-    let (input, operations) = many0(tuple((delimited(space0, operator, space0), term)))(input)?;
+fn arithmetic_expression(input: &str) -> ParseResult<Expression> {
+    let (mut input, mut expr) = term(input)?;
+
+    loop {
+        let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
+            space0::<&str, Error<&str>>,
+            alt((tag("+"), tag("-"))),
+            space0::<&str, Error<&str>>,
+        )(input);
+
+        match op_result {
+            Ok((new_input, op)) => {
+                let (newer_input, term2) = term(new_input)?;
+                expr = match op {
+                    "+" => Expression::Add(Box::new(expr), Box::new(term2)),
+                    "-" => Expression::Sub(Box::new(expr), Box::new(term2)),
+                    _ => unreachable!(),
+                };
+                input = newer_input;
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok((input, expr))
+}
+
+// Add to imports
+use nom::character::complete::char as char_parser;
+
+// Parse boolean literals
+fn boolean(input: &str) -> IResult<&str, Expression> {
+    alt((
+        map(tag("True"), |_| Expression::CTrue),
+        map(tag("False"), |_| Expression::CFalse),
+    ))(input)
+}
+
+// Parse real numbers
+fn real(input: &str) -> IResult<&str, Expression> {
+    map_res(
+        recognize(tuple((
+            opt(char_parser('-')),
+            digit1,
+            char_parser('.'),
+            digit1,
+        ))),
+        |s: &str| s.parse::<f64>().map(Expression::CReal),
+    )(input)
+}
+
+// Parse strings
+fn string(input: &str) -> IResult<&str, Expression> {
+    delimited(
+        char_parser('"'),
+        map(take_while(|c| c != '"'), |s: &str| {
+            Expression::CString(s.to_string())
+        }),
+        char_parser('"'),
+    )(input)
+}
+
+// Parse boolean operations
+fn boolean_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, first) = boolean_term(input)?;
+    let (input, rest) = many0(tuple((
+        delimited(space0, alt((tag("and"), tag("or"))), space0),
+        boolean_term,
+    )))(input)?;
 
     Ok((
         input,
-        operations
-            .into_iter()
-            .fold(first, |acc, (op, val)| match op {
-                "+" => Expression::Add(Box::new(acc), Box::new(val)),
-                "-" => Expression::Sub(Box::new(acc), Box::new(val)),
-                "*" => Expression::Mul(Box::new(acc), Box::new(val)),
-                "/" => Expression::Div(Box::new(acc), Box::new(val)),
-                _ => unreachable!(),
-            }),
+        rest.into_iter().fold(first, |acc, (op, val)| match op {
+            "and" => Expression::And(Box::new(acc), Box::new(val)),
+            "or" => Expression::Or(Box::new(acc), Box::new(val)),
+            _ => unreachable!(),
+        }),
     ))
 }
+
+fn boolean_term(input: &str) -> IResult<&str, Expression> {
+    alt((
+        map(preceded(tag("not "), boolean_factor), |expr| {
+            Expression::Not(Box::new(expr))
+        }),
+        boolean_factor,
+    ))(input)
+}
+
+fn boolean_factor(input: &str) -> IResult<&str, Expression> {
+    alt((
+        boolean,
+        comparison_expression,
+        delimited(
+            tuple((char('('), space0)),
+            boolean_expression,
+            tuple((space0, char(')'))),
+        ),
+    ))(input)
+}
+
+fn factor(input: &str) -> IResult<&str, Expression> {
+    alt((
+        delimited(
+            tuple((char('('), space0)),
+            arithmetic_expression,
+            tuple((space0, char(')'))),
+        ),
+        function_call,
+        integer,
+        map(identifier, Expression::Var),
+    ))(input)
+}
+
 //indented block parser
 fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = line_ending(input)?;
@@ -557,5 +685,202 @@ mod tests {
             }
             _ => panic!("Expected Assignment"),
         }
+    }
+
+    #[test]
+    fn test_basic_arithmetic_left_recursion() {
+        let cases = vec![
+            (
+                "1 + 2",
+                Expression::Add(Box::new(Expression::CInt(1)), Box::new(Expression::CInt(2))),
+            ),
+            (
+                "3 * 4",
+                Expression::Mul(Box::new(Expression::CInt(3)), Box::new(Expression::CInt(4))),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = arithmetic_expression(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_operator_precedence() {
+        let input = "2 + 3 * 4";
+        let expected = Expression::Add(
+            Box::new(Expression::CInt(2)),
+            Box::new(Expression::Mul(
+                Box::new(Expression::CInt(3)),
+                Box::new(Expression::CInt(4)),
+            )),
+        );
+
+        let (rest, result) = arithmetic_expression(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_left_associativity() {
+        let input = "1 - 2 - 3"; // Should parse as (1-2)-3, not 1-(2-3)
+        let expected = Expression::Sub(
+            Box::new(Expression::Sub(
+                Box::new(Expression::CInt(1)),
+                Box::new(Expression::CInt(2)),
+            )),
+            Box::new(Expression::CInt(3)),
+        );
+
+        let (rest, result) = arithmetic_expression(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_nested_expressions() {
+        let input = "(1 + 2) * (3 + 4)";
+        let expected = Expression::Mul(
+            Box::new(Expression::Add(
+                Box::new(Expression::CInt(1)),
+                Box::new(Expression::CInt(2)),
+            )),
+            Box::new(Expression::Add(
+                Box::new(Expression::CInt(3)),
+                Box::new(Expression::CInt(4)),
+            )),
+        );
+
+        let (rest, result) = arithmetic_expression(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_complex_expression_2() {
+        let input = "1 + 2 * 3 + 4 * 5";
+        let expected = Expression::Add(
+            Box::new(Expression::Add(
+                Box::new(Expression::CInt(1)),
+                Box::new(Expression::Mul(
+                    Box::new(Expression::CInt(2)),
+                    Box::new(Expression::CInt(3)),
+                )),
+            )),
+            Box::new(Expression::Mul(
+                Box::new(Expression::CInt(4)),
+                Box::new(Expression::CInt(5)),
+            )),
+        );
+
+        let (rest, result) = arithmetic_expression(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_negative_numbers_with_operations() {
+        let cases = vec![
+            (
+                "-1 + 2",
+                Expression::Add(
+                    Box::new(Expression::CInt(-1)),
+                    Box::new(Expression::CInt(2)),
+                ),
+            ),
+            (
+                "3 * -4",
+                Expression::Mul(
+                    Box::new(Expression::CInt(3)),
+                    Box::new(Expression::CInt(-4)),
+                ),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = arithmetic_expression(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_boolean_literals() {
+        let cases = vec![("True", Expression::CTrue), ("False", Expression::CFalse)];
+
+        for (input, expected) in cases {
+            let (rest, result) = boolean(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_real_numbers() {
+        let cases = vec![
+            ("3.14", Expression::CReal(3.14)),
+            ("-2.5", Expression::CReal(-2.5)),
+            ("0.0", Expression::CReal(0.0)),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = real(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_string_literals() {
+        let cases = vec![
+            ("\"hello\"", Expression::CString("hello".to_string())),
+            ("\"123\"", Expression::CString("123".to_string())),
+            ("\"\"", Expression::CString("".to_string())),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = string(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_boolean_operations() {
+        let cases = vec![
+            (
+                "True and False",
+                Expression::And(Box::new(Expression::CTrue), Box::new(Expression::CFalse)),
+            ),
+            (
+                "True or False",
+                Expression::Or(Box::new(Expression::CTrue), Box::new(Expression::CFalse)),
+            ),
+            ("not True", Expression::Not(Box::new(Expression::CTrue))),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = boolean_expression(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_complex_boolean_expressions() {
+        let input = "not (True and False) or True";
+        let expected = Expression::Or(
+            Box::new(Expression::Not(Box::new(Expression::And(
+                Box::new(Expression::CTrue),
+                Box::new(Expression::CFalse),
+            )))),
+            Box::new(Expression::CTrue),
+        );
+
+        let (rest, result) = boolean_expression(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
     }
 }
