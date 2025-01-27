@@ -101,6 +101,9 @@ pub fn check_stmt(
             let mut type_vec = vec![];
 
             if let Some(params) = func.params.clone() {
+                // Adicionamos a verificação de parâmetros duplicados
+                check_duplicate_params(&params)?;
+                
                 for (param_name, param_kind) in params {
                     new_env.insert_variable(param_name, param_kind.clone());
                     type_vec.push(param_kind);
@@ -164,6 +167,18 @@ fn check_func_call(
         }
         _ => Err(format!("[Name Error on '{}()'] '{}()' is not defined.", env.scope_name(), name))
     }
+}
+
+fn check_duplicate_params(params: &Vec<(Name, Type)>) -> Result<(), ErrorMessage> {
+    let mut seen_params = std::collections::HashSet::new();
+    
+    for (name, _) in params {
+        if !seen_params.insert(name.clone()) {
+            return Err(format!("[Parameter Error] Duplicate parameter name '{}'", name));
+        }
+    }
+    
+    Ok(())
 }
 
 fn check_var_name(name: Name, env: &Environment<Type>, scoped: bool) -> Result<Type, ErrorMessage> {
@@ -685,4 +700,105 @@ mod tests {
             Err(s) => assert_eq!(s, "[Name Error on '__main__()'] 'func()' is not defined."),
         }
     }
+    #[test]
+    fn check_recursive_function() {
+        let env: Environment<Type> = Environment::new();
+
+        // Definição de função fatorial recursiva
+        let factorial = FuncDef(Function {
+            name: "factorial".to_string(),
+            kind: Some(TInteger),
+            params: Some(vec![("n".to_string(), TInteger)]),
+            body: Some(Box::new(IfThenElse(
+                Box::new(EQ(Box::new(Var("n".to_string())), Box::new(CInt(0)))),
+                Box::new(Return(Box::new(CInt(1)))),
+                Some(Box::new(Return(Box::new(Mul(
+                    Box::new(Var("n".to_string())),
+                    Box::new(FuncCall(
+                        "factorial".to_string(),
+                        vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(1)))]
+                    ))
+                )))))
+            )))
+        });
+
+        match check_stmt(factorial, &env) {
+            Ok(ControlFlow::Continue(new_env)) => {
+                assert_eq!(
+                    new_env.search_frame("factorial".to_string()),
+                    Some(TFunction(Box::new(Some(TInteger)), vec![TInteger])).as_ref()
+                );
+            }
+            _ => assert!(false, "Recursive function definition failed"),
+        }
+    }
+
+    #[test]
+    fn check_function_multiple_return_paths() {
+        let env: Environment<Type> = Environment::new();
+
+        // Função com múltiplos caminhos de retorno
+        let func = FuncDef(Function {
+            name: "max".to_string(),
+            kind: Some(TInteger),
+            params: Some(vec![
+                ("a".to_string(), TInteger),
+                ("b".to_string(), TInteger)
+            ]),
+            body: Some(Box::new(IfThenElse(
+                Box::new(GT(Box::new(Var("a".to_string())), Box::new(Var("b".to_string())))),
+                Box::new(Return(Box::new(Var("a".to_string())))),
+                Some(Box::new(Return(Box::new(Var("b".to_string())))))
+            )))
+        });
+
+        match check_stmt(func, &env) {
+            Ok(ControlFlow::Continue(_)) => assert!(true),
+            _ => assert!(false, "Multiple return paths function failed"),
+        }
+    }
+
+    #[test]
+    fn test_function_wrong_return_type() {
+        let env: Environment<Type> = Environment::new();
+
+        let func = FuncDef(Function {
+            name: "wrong_return".to_string(),
+            kind: Some(TInteger),
+            params: None,
+            body: Some(Box::new(Return(Box::new(CReal(1.0)))))
+        });
+
+        match check_stmt(func, &env) {
+            Ok(_) => assert!(false, "Should fail due to wrong return type"),
+            Err(msg) => assert_eq!(
+                msg,
+                "[Type Error] 'wrong_return()' has mismatched types: expected 'TInteger', found 'TReal'."
+            ),
+        }
+    }
+
+    #[test]
+fn test_function_parameter_shadowing() {
+    let env: Environment<Type> = Environment::new();
+
+    let func = FuncDef(Function {
+        name: "shadow_test".to_string(),
+        kind: Some(TInteger),
+        params: Some(vec![
+            ("x".to_string(), TInteger),
+            ("x".to_string(), TInteger) // Mesmo nome de parâmetro
+        ]),
+        body: Some(Box::new(Return(Box::new(Var("x".to_string())))))
+    });
+
+    match check_stmt(func, &env) {
+        Ok(_) => panic!("Should not accept duplicate parameter names"),
+        Err(msg) => assert_eq!(
+            msg,
+            "[Parameter Error] Duplicate parameter name 'x'"
+        ),
+    }
+}
+
 }
