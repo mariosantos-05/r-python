@@ -22,8 +22,12 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
-        Expression::IsError(e) => iserror(*e,env),
         Expression::Unwrap(e) => unwrap(*e,env),
+        Expression::IsError(e) => iserror(*e,env),
+        Expression::IsNothing(e) => is_nothing(*e,env),
+        Expression::CJust(e) => is_just(*e,env),
+        Expression::COk(e) => is_ok(*e,env),
+        Expression::CErr(e) => is_err(*e,env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -36,10 +40,7 @@ fn is_constant(exp: Expression) -> bool {
         Expression::CInt(_) => true,
         Expression::CReal(_) => true,
         Expression::CString(_) => true,
-        Expression::CJust(_) => true,
         Expression::CNothing => true,
-        Expression::COk(_) => true,
-        Expression::CErr(_) => true,
         _ => false,
     }
 }
@@ -293,10 +294,17 @@ fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage
     let v = eval(exp, env)?;
     match v {
         Expression::CJust(e) => Ok(*e),
-        // Expression::CNothing => Ok(CErr("")),
         Expression::COk(e) => Ok(*e),
-        // Expression::CErr(_) => Ok(v),
         _ => Err(String::from("'unwrap' is expects a Just or Ok.")),
+    }
+}
+
+fn is_nothing(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage>{
+    let v = eval(exp, env)?;
+    match v {
+        Expression::CNothing => Ok(Expression::CTrue),
+        Expression::CJust(_) => Ok(Expression::CFalse),
+        _ => Err("Expression not recognized.".to_string()),
     }
 }
 
@@ -308,6 +316,22 @@ fn iserror(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessag
         _ => Err(String::from("'is_error' is only defined for Ok and Err.")),
     }
 }
+
+fn is_just(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    let v = eval(exp, env)?;
+    return Ok(Expression::CJust(Box::new(v)));
+}
+
+fn is_ok(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    let v = eval(exp, env)?;
+    return Ok(Expression::COk(Box::new(v)));
+}
+
+fn is_err(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+    let v = eval(exp, env)?;
+    return Ok(Expression::CErr(Box::new(v)));
+}
+
 
 pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
     match stmt {
@@ -450,6 +474,34 @@ mod tests {
         assert_eq!(eval(ie, &env), Err(String::from("'is_error' is only defined for Ok and Err.")));
     }
 
+    #[test]
+    fn eval_is_nothing_with_nothing(){
+        let env = HashMap::new();
+        let nothing = CNothing;
+        let u = IsNothing(Box::new(nothing));
+
+        assert_eq!(eval(u,&env), Ok(CTrue));
+    }
+
+    #[test]
+    fn eval_is_nothing_with_just(){
+        let env = HashMap::new();
+        let c2 = CReal(6.9);
+        let just = CJust(Box::new(c2));
+        let u = IsNothing(Box::new(just));
+
+        assert_eq!(eval(u,&env), Ok(CFalse));
+    }
+
+    #[test]
+    fn eval_is_nothing_with_int(){
+        let env = HashMap::new();
+        let c420 = CInt(420);
+        let u = IsNothing(Box::new(c420));
+
+        assert_eq!(eval(u,&env), Err("Expression not recognized.".to_string()));
+    }
+    
     #[test]
     fn eval_add_expression1() {
         let env = HashMap::new();
@@ -1126,4 +1178,62 @@ mod tests {
             Err(s) => assert!(false, "{}", s),
         }
     }
+
+    #[test]
+    fn eval_complex_unwrap() {
+        /*
+         * Test for an unwrap check alongside with errors
+         *
+         * > x = Ok(1)
+         * > y = Nothing
+         * > z = 0
+         * > if !IsError(x):
+         * >   y = Some(2)
+         * > if !IsNothing(y):
+         * >   z = Unwrap(x) + Unwrap(y)
+         *
+         * After executing, 'z' should be 3.
+         */
+        let env = HashMap::new();
+
+        let setup_x = Assignment(String::from("x"), Box::new(COk(Box::new(CInt(1)))));
+        let setup_y = Assignment(String::from("y"), Box::new(CNothing));
+        let setup_z = Assignment(String::from("z"), Box::new(CInt(0)));
+
+        let setup_stmt = Sequence(Box::new(setup_x), Box::new(Sequence(Box::new(setup_y), Box::new(setup_z))));
+
+        let error_chk = Not(Box::new(IsError(Box::new(Var(String::from("x"))))));
+        let then_error_chk = Assignment(String::from("y"), Box::new(CJust(Box::new(CInt(2)))));
+        
+        let if_stmt_first = IfThenElse(
+            Box::new(error_chk),
+            Box::new(then_error_chk),
+            None,
+        );
+
+        let nothing_chk = Not(Box::new(IsNothing(Box::new(Var(String::from("y"))))));
+        let unwrap_stmt = Add(
+            Box::new(Unwrap(Box::new(Var(String::from("x"))))),
+            Box::new(Unwrap(Box::new(Var(String::from("y"))))));
+
+        let then_nothing_chk = Assignment(String::from("z"), Box::new(unwrap_stmt));
+        
+        let if_stmt_second = IfThenElse(
+            Box::new(nothing_chk),
+            Box::new(then_nothing_chk),
+            None,
+        );
+
+        let program = Sequence(Box::new(setup_stmt),Box::new(Sequence(Box::new(if_stmt_first), Box::new(if_stmt_second))));
+
+        match execute(program, env) {
+            Ok(new_env) => {
+                assert_eq!(new_env.get("x"), Some(&COk(Box::new(CInt(1)))));
+                assert_eq!(new_env.get("y"), Some(&CJust(Box::new(CInt(2)))));
+                assert_eq!(new_env.get("z"), Some(&CInt(3)));
+            },
+            Err(s) => assert!(false, "{}", s),
+        }
+    }
+
 }

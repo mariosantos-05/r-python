@@ -98,13 +98,11 @@ fn check_bin_relational_expression(
 
 fn check_result_ok(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
-
     return Ok(Type::TResult(Box::new(exp_type), Box::new(Type::TAny)));
 }
 
 fn check_result_err(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
-
     return Ok(Type::TResult(Box::new(Type::TAny), Box::new(exp_type)));
 }
 
