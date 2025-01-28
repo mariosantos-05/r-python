@@ -22,12 +22,12 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
-        Expression::Unwrap(e) => unwrap(*e, env),
-        Expression::IsError(e) => iserror(*e, env),
-        Expression::IsNothing(e) => is_nothing(*e, env),
-        Expression::CJust(e) => is_just(*e, env),
-        Expression::COk(e) => is_ok(*e, env),
-        Expression::CErr(e) => is_err(*e, env),
+        Expression::Unwrap(e) => eval_unwrap_expression(*e, env),
+        Expression::IsError(e) => eval_iserror_expression(*e, env),
+        Expression::IsNothing(e) => eval_isnothing_expression(*e, env),
+        Expression::CJust(e) => eval_just(*e, env),
+        Expression::COk(e) => eval_ok(*e, env),
+        Expression::CErr(e) => eval_err(*e, env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -290,7 +290,7 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_unwrap_expression(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     match v {
         Expression::CJust(e) => Ok(*e),
@@ -299,7 +299,10 @@ fn unwrap(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage
     }
 }
 
-fn is_nothing(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_isnothing_expression(
+    exp: Expression,
+    env: &Environment,
+) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     match v {
         Expression::CNothing => Ok(Expression::CTrue),
@@ -308,7 +311,7 @@ fn is_nothing(exp: Expression, env: &Environment) -> Result<Expression, ErrorMes
     }
 }
 
-fn iserror(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_iserror_expression(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     match v {
         Expression::CErr(_) => Ok(Expression::CTrue),
@@ -317,17 +320,17 @@ fn iserror(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessag
     }
 }
 
-fn is_just(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_just(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     return Ok(Expression::CJust(Box::new(v)));
 }
 
-fn is_ok(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_ok(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     return Ok(Expression::COk(Box::new(v)));
 }
 
-fn is_err(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
+fn eval_err(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     let v = eval(exp, env)?;
     return Ok(Expression::CErr(Box::new(v)));
 }
@@ -1190,7 +1193,7 @@ mod tests {
          * > y = Nothing
          * > z = 0
          * > if !IsError(x):
-         * >   y = Some(2)
+         * >   y = Just(2)
          * > if !IsNothing(y):
          * >   z = Unwrap(x) + Unwrap(y)
          *

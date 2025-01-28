@@ -31,9 +31,9 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::CErr(e) => check_result_err(*e, env),
         Expression::CJust(e) => check_maybe_just(*e, env),
         Expression::CNothing => Ok(Type::TMaybe(Box::new(Type::TAny))),
-        Expression::IsError(e) => check_is_error(*e, env),
-        Expression::IsNothing(e) => check_is_nothing(*e, env),
-        Expression::Unwrap(e) => check_unwrap(*e, env),
+        Expression::IsError(e) => check_iserror_type(*e, env),
+        Expression::IsNothing(e) => check_isnothing_type(*e, env),
+        Expression::Unwrap(e) => check_unwrap_type(*e, env),
 
         _ => Err(String::from("not implemented yet")),
     }
@@ -106,7 +106,7 @@ fn check_result_err(exp: Expression, env: &Environment) -> Result<Type, ErrorMes
     return Ok(Type::TResult(Box::new(Type::TAny), Box::new(exp_type)));
 }
 
-fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+fn check_unwrap_type(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
 
     match exp_type {
@@ -123,7 +123,7 @@ fn check_maybe_just(exp: Expression, env: &Environment) -> Result<Type, ErrorMes
     Ok(Type::TMaybe(Box::new(exp_type)))
 }
 
-fn check_is_error(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+fn check_iserror_type(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let v = check(exp, env)?;
 
     match v {
@@ -132,7 +132,7 @@ fn check_is_error(exp: Expression, env: &Environment) -> Result<Type, ErrorMessa
     }
 }
 
-fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
+fn check_isnothing_type(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
 
     match exp_type {
