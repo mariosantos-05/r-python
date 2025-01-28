@@ -8,7 +8,7 @@ use crate::ir::ast::ADT;
 
 type ErrorMessage = String;
 
-type Environment = HashMap<Name, Type>;
+type Environment = HashMap<Name, Type>; /*Maps variable names to expressions (runtime values). */
 
 pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     match exp {
@@ -89,42 +89,65 @@ fn check_bin_relational_expression(
         _ => Err(String::from("[Type Error] expecting numeric type values.")),
     }
 }
-
-
 fn check_adt_constructor(
-    constructor: ValueConstructor,
-    env: &Environment,
+    ValueConstructor::Constructor(_name, param_types): ValueConstructor,
+    _env: &Environment,
 ) -> Result<Type, ErrorMessage> {
-    match constructor {
-        ValueConstructor::Constructor(name, param_types) => {
-            let param_types_resolved: Result<Vec<Type>, ErrorMessage> = param_types
-                .into_iter()
-                .map(|param_type| match param_type {
-                    Type::TInteger | Type::TBool | Type::TReal | Type::TString => Ok(param_type),
-                    Type::TList(inner) => Ok(Type::TList(inner)),
-                    Type::TTuple(inner) => Ok(Type::TTuple(inner)),
-                })
-                .collect();
-            
-            param_types_resolved.map(|resolved| Type::TTuple(resolved))
-        }
-    }
+    let param_types_resolved: Result<Vec<Type>, ErrorMessage> = param_types
+        .into_iter()
+        .map(|param_type| match param_type {
+            Type::TInteger | Type::TBool | Type::TReal | Type::TString => Ok(param_type),
+            Type::TList(inner) => Ok(Type::TList(inner)),
+            Type::TTuple(inner) => Ok(Type::TTuple(inner)),
+        })
+        .collect();
+    
+    param_types_resolved.map(|resolved| Type::TTuple(resolved))
 }
 
 
-fn check_adt(
-    adt: ADT,
-    env: &Environment,
-) -> Result<(), ErrorMessage> {
-    match adt {
-        ADT::DataType(name, constructors) => {
-            for constructor in constructors {
-                check_adt_constructor(constructor, env)?;
+fn check_adt(adt: ADT, _env: &HashMap<Name, Type>) -> Result<(), String> {
+    if let ADT::DataType(ref name, constructors) = adt {
+        // Check if the ADT name is empty
+        if name.is_empty() {
+            return Err("DataType name cannot be empty".to_string());
+        }
+
+        let mut seen_constructors = std::collections::HashSet::new();
+        
+        for constructor in constructors {
+            if let ValueConstructor::Constructor(ref constructor_name, ref types) = constructor {
+                // Check for duplicate constructor names
+                if seen_constructors.contains(constructor_name) {
+                    return Err(format!("Duplicate constructor '{}' found for ADT '{}'", constructor_name, name));
+                }
+                seen_constructors.insert(constructor_name.clone());
+
+                // Check if constructor name is empty
+                if constructor_name.is_empty() {
+                    return Err(format!("Constructor name cannot be empty for ADT '{}'", name));
+                }
+
+                // Special checks for recursive or nested ADTs
+
+                // Check for empty tuples in constructors
+                if let Some(Type::TTuple(ref tuple_types)) = types.get(0) {
+                    if tuple_types.is_empty() {
+                        return Err(format!("Constructor '{}' in ADT '{}' cannot have an empty tuple", constructor_name, name));
+                    }
+                }
             }
-            Ok(())
         }
+        Ok(())
+    } else {
+        Err("Invalid ADT".to_string())
     }
 }
+
+
+
+
+
 
 #[test]
 fn check_valid_adt() {
@@ -364,7 +387,7 @@ fn check_invalid_nested_adt() {
             ),
         ],
     );
-    assert!(check_adt(adt, &env).is_err());
+    assert!(check_adt(adt, &env).is_err()); // Expect error for empty tuple
 }
 
 #[test]
@@ -399,18 +422,18 @@ fn check_invalid_recursive_adt_with_mismatch() {
     assert!(check_adt(adt, &env).is_err());
 }
 
-#[test]
-fn check_invalid_adt_with_duplicate_constructors() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Option".to_string(),
-        vec![
-            ValueConstructor::Constructor("Some".to_string(), vec![Type::TInteger]),
-            ValueConstructor::Constructor("Some".to_string(), vec![Type::TBool]), // Duplicate constructor name
-        ],
-    );
-    assert!(check_adt(adt, &env).is_err());
-}
+    #[test]
+    fn check_invalid_adt_with_duplicate_constructors() {
+        let env = HashMap::new();
+        let adt = ADT::DataType(
+            "Option".to_string(),
+            vec![
+                ValueConstructor::Constructor("Some".to_string(), vec![Type::TInteger]),
+                ValueConstructor::Constructor("Some".to_string(), vec![Type::TBool]), // Duplicate constructor name
+            ],
+        );
+        assert!(check_adt(adt, &env).is_err());
+    }
 
 #[test]
 fn check_valid_adt_with_list_and_tuple() {

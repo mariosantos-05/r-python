@@ -1,6 +1,6 @@
 pub type Name = String;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,
@@ -10,7 +10,7 @@ pub enum Type {
     TTuple(Vec<Type>),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq, Clone)]
 pub enum ValueConstructor{
     Constructor(Name, Vec<Type>),
 }
@@ -49,6 +49,9 @@ pub enum Expression {
     LT(Box<Expression>, Box<Expression>),
     GTE(Box<Expression>, Box<Expression>),
     LTE(Box<Expression>, Box<Expression>),
+
+     /* ADT Constructor */
+     Constructor(Name, Vec<Box<Expression>>), //////// NEW: ADT constructor support
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -58,5 +61,6 @@ pub enum Statement {
     Assignment(Name, Box<Expression>),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
-    Sequence(Box<Statement>, Box<Statement>),
+    Sequence(Box<Statement>, Box<Statement>), 
+    ADTDeclaration(Name, Vec<ValueConstructor>),
 }
