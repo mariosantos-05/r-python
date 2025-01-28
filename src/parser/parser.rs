@@ -3,7 +3,7 @@ use nom::{
     bytes::complete::{tag, take_while, take_while1},
     character::complete::{char, digit1, line_ending, space0, space1},
     combinator::{map, map_res, opt, recognize},
-    error::Error,
+    error::{Error, ErrorKind},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -170,13 +170,8 @@ fn boolean(input: &str) -> IResult<&str, Expression> {
 // Parse real numbers
 fn real(input: &str) -> IResult<&str, Expression> {
     map_res(
-        recognize(tuple((
-            opt(char_parser('-')),
-            digit1,
-            char_parser('.'),
-            digit1,
-        ))),
-        |s: &str| s.parse::<f64>().map(Expression::CReal),
+        recognize(tuple((opt(char('-')), digit1, char('.'), digit1))),
+        |num_str: &str| num_str.parse::<f64>().map(Expression::CReal),
     )(input)
 }
 
@@ -238,7 +233,11 @@ fn factor(input: &str) -> IResult<&str, Expression> {
             tuple((space0, char(')'))),
         ),
         function_call,
+        real,
         integer,
+        map(tuple((char('-'), space0, factor)), |(_, _, expr)| {
+            Expression::Mul(Box::new(Expression::CInt(-1)), Box::new(expr))
+        }),
         map(identifier, Expression::Var),
     ))(input)
 }
@@ -300,13 +299,18 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     let (input, _) = delimited(space0, char('='), space0)(input)?;
     let (input, expr) = expression(input)?;
 
+    // Infer type from expression
+    let inferred_type = match &expr {
+        Expression::CInt(_) => Some(Type::TInteger),
+        Expression::CReal(_) => Some(Type::TReal),
+        Expression::CString(_) => Some(Type::TString),
+        Expression::CTrue | Expression::CFalse => Some(Type::TBool),
+        _ => None,
+    };
+
     Ok((
         input,
-        Statement::Assignment(
-            name,
-            Box::new(expr),
-            None, // Add Option<Type> for type annotations
-        ),
+        Statement::Assignment(name, Box::new(expr), inferred_type),
     ))
 }
 
@@ -324,7 +328,6 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
     let (input, _) = tag("def")(input)?;
     let (input, _) = space1(input)?;
     let (input, name) = identifier(input)?;
-    let (input, _) = space0(input)?;
     let (input, _) = char('(')(input)?;
     let (input, params) = separated_list0(
         delimited(space0, char(','), space0),
@@ -333,13 +336,11 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
             preceded(tuple((space0, char(':'), space0)), identifier),
         )),
     )(input)?;
-    let (input, _) = space0(input)?;
     let (input, _) = char(')')(input)?;
     let (input, _) = space0(input)?;
     let (input, _) = tag("->")(input)?;
     let (input, _) = space0(input)?;
     let (input, return_type) = identifier(input)?;
-    let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
     let (input, body) = indented_block(input)?;
 

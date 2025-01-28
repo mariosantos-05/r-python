@@ -9,7 +9,7 @@ pub enum EnvValue {
     Func(Function),
 }
 
-pub type Environment = HashMap<Name, (Option<EnvValue>, Type)>;
+pub type Environment = HashMap<String, (Option<EnvValue>, Type)>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {

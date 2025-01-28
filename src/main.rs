@@ -5,23 +5,29 @@ use crate::interpreter::interpreter::{execute, ControlFlow};
 use crate::ir::ast::{Statement, Type};
 use crate::parser::parser::parse;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 
 pub mod interpreter;
 pub mod ir;
 pub mod parser;
 pub mod tc;
 
-fn run_test(name: &str, program: &str) {
-    println!("\n=== Running test: {} ===", name);
-    println!("Program:\n{}\n", program);
+fn run_test(name: &str, program: &str) -> String {
+    let mut output = String::new();
+    output.push_str(&format!("\n=== Running test: {} ===\n", name));
+    output.push_str(&format!("Program:\n{}\n\n", program));
 
     match parse(program) {
         Ok((remaining, statements)) => {
-            println!("Parsed AST: {:#?}\n", statements);
+            output.push_str(&format!("Parsed AST: {:#?}\n\n", statements));
 
             if !remaining.is_empty() {
-                println!("Warning: Unparsed input remains: {:?}\n", remaining);
-                return;
+                output.push_str(&format!(
+                    "Warning: Unparsed input remains: {:?}\n\n",
+                    remaining
+                ));
+                return output;
             }
 
             let mut current_env = HashMap::new();
@@ -74,19 +80,20 @@ fn run_test(name: &str, program: &str) {
                         current_env = new_env;
                     }
                     Ok(ControlFlow::Return(value)) => {
-                        println!("Return value: {:?}", value);
-                        return;
+                        output.push_str(&format!("Return value: {:?}\n", value));
+                        return output;
                     }
                     Err(e) => {
-                        println!("Execution error: {}", e);
-                        return;
+                        output.push_str(&format!("Execution error: {}\n", e));
+                        return output;
                     }
                 }
             }
-            println!("\nFinal environment: {:?}", current_env);
+            output.push_str(&format!("\nFinal environment: {:?}\n", current_env));
         }
-        Err(e) => println!("Parse error: {:?}", e),
+        Err(e) => output.push_str(&format!("Parse error: {:?}\n", e)),
     }
+    output
 }
 
 //raw string literal (r#""#) to avoid escaping newlines
@@ -287,4 +294,49 @@ result2 = (x < y) or True
 result3 = not (x <= y)
 result4 = (x >= y) and (not False)"#;
     run_test("22. Mixed Boolean Operations", test22);
+
+    let mut all_results = String::new();
+
+    all_results.push_str(&run_test("1. Basic if-else", test1));
+    all_results.push_str(&run_test("2. Arithmetic operations", test2));
+    all_results.push_str(&run_test(
+        "3. Nested if statements with multiple operations",
+        test3,
+    ));
+    all_results.push_str(&run_test("4. Multiple assignments and references", test4));
+    all_results.push_str(&run_test("5. Complex arithmetic expressions", test5));
+    all_results.push_str(&run_test("6. Multiple nested comparisons", test6));
+    all_results.push_str(&run_test("7. Mixed arithmetic and control flow", test7));
+    all_results.push_str(&run_test("8. Basic function definition and call", test8));
+    all_results.push_str(&run_test("9. Recursive function", test9));
+    all_results.push_str(&run_test("10. Function with multiple return paths", test10));
+    all_results.push_str(&run_test(
+        "11. Left recursion and operator precedence",
+        test11,
+    ));
+    all_results.push_str(&run_test("12. Complex expression chains", test12));
+    all_results.push_str(&run_test("13. Mixed operator precedence", test13));
+    all_results.push_str(&run_test("14. Deeply nested expressions", test14));
+    all_results.push_str(&run_test("15. Basic negative numbers", test15));
+    all_results.push_str(&run_test(
+        "16. Mixed positive and negative operations",
+        test16,
+    ));
+    all_results.push_str(&run_test("17. Complex expressions with negatives", test17));
+    all_results.push_str(&run_test(
+        "18. Function calls with negative numbers",
+        test18,
+    ));
+    all_results.push_str(&run_test("19. Boolean Operations", test19));
+    all_results.push_str(&run_test("20. Real Number Operations", test20));
+    all_results.push_str(&run_test("21. String Operations", test21));
+    all_results.push_str(&run_test("22. Mixed Boolean Operations", test22));
+
+    // Write results to file
+    let mut file = File::create("test_results.txt").expect("Failed to create file");
+    file.write_all(all_results.as_bytes())
+        .expect("Failed to write to file");
+
+    // Also print to console
+    print!("{}", all_results);
 }
