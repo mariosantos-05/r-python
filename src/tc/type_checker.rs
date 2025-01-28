@@ -29,7 +29,7 @@ pub fn check(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
         Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::COk(e) => check_result_ok(*e, env),
         Expression::CErr(e) => check_result_err(*e, env),
-        Expression::CJust(e) => check_maybe_just(*e,env),
+        Expression::CJust(e) => check_maybe_just(*e, env),
         Expression::CNothing => Ok(Type::TMaybe(Box::new(Type::TAny))),
         Expression::IsError(e) => check_is_error(*e, env),
         Expression::IsNothing(e) => check_is_nothing(*e, env),
@@ -112,7 +112,9 @@ fn check_unwrap(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage
     match exp_type {
         Type::TMaybe(t) => Ok(*t),
         Type::TResult(tl, _) => Ok(*tl),
-        _ => Err(String::from("[Type Error] expecting a maybe or result type value.")),
+        _ => Err(String::from(
+            "[Type Error] expecting a maybe or result type value.",
+        )),
     }
 }
 
@@ -125,20 +127,19 @@ fn check_is_error(exp: Expression, env: &Environment) -> Result<Type, ErrorMessa
     let v = check(exp, env)?;
 
     match v {
-        Type::TResult(_,_) => Ok(Type::TBool),
+        Type::TResult(_, _) => Ok(Type::TBool),
         _ => Err(String::from("[Type Error] expecting a result type value.")),
     }
 }
 
 fn check_is_nothing(exp: Expression, env: &Environment) -> Result<Type, ErrorMessage> {
     let exp_type = check(exp, env)?;
-    
+
     match exp_type {
         Type::TMaybe(_) => Ok(Type::TBool),
         _ => Err(String::from("[Type Error] expecting a maybe type value.")),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -297,20 +298,17 @@ mod tests {
 
         assert_eq!(
             check(err, &env),
-            Ok(TResult(Box::new(TAny),Box::new(TInteger)))
+            Ok(TResult(Box::new(TAny), Box::new(TInteger)))
         );
     }
 
     #[test]
-    fn check_just_integer(){
+    fn check_just_integer() {
         let env = HashMap::new();
         let c5 = CInt(5);
         let just = CJust(Box::new(c5));
 
-        assert_eq!(
-            check(just, &env),
-            Ok(TMaybe(Box::new(TInteger)))
-        )
+        assert_eq!(check(just, &env), Ok(TMaybe(Box::new(TInteger))))
     }
 
     #[test]
@@ -320,10 +318,7 @@ mod tests {
         let ok = COk(Box::new(bool));
         let ie = IsError(Box::new(ok));
 
-        assert_eq!(
-            check(ie, &env),
-            Ok(TBool)
-        );
+        assert_eq!(check(ie, &env), Ok(TBool));
     }
 
     #[test]
@@ -339,39 +334,34 @@ mod tests {
     }
 
     #[test]
-    fn check_nothing(){
+    fn check_nothing() {
         let env = HashMap::new();
 
-        assert_eq!(
-            check(CNothing, &env),
-            Ok(TMaybe(Box::new(TAny)))
-        );
-
+        assert_eq!(check(CNothing, &env), Ok(TMaybe(Box::new(TAny))));
     }
 
     #[test]
-    fn check_is_nothing_on_maybe(){
+    fn check_is_nothing_on_maybe() {
         let env = HashMap::new();
-        let c5= CInt(5);
+        let c5 = CInt(5);
         let just = CJust(Box::new(c5));
         let is_nothing = IsNothing(Box::new(just));
 
         assert_eq!(check(is_nothing, &env), Ok(TBool));
     }
 
-
     #[test]
     fn check_is_nothing_type_error() {
         let env = HashMap::new();
         let c5 = CInt(5);
         let is_nothing = IsNothing(Box::new(c5));
-        
+
         assert_eq!(
             check(is_nothing, &env),
             Err(String::from("[Type Error] expecting a maybe type value."))
         );
     }
-    
+
     #[test]
     fn check_unwrap_maybe() {
         let env = HashMap::new();
@@ -379,10 +369,7 @@ mod tests {
         let some = CJust(Box::new(c5));
         let u = Unwrap(Box::new(some));
 
-        assert_eq!(
-            check(u, &env),
-            Ok(TInteger)
-        );
+        assert_eq!(check(u, &env), Ok(TInteger));
     }
 
     #[test]
@@ -390,10 +377,12 @@ mod tests {
         let env = HashMap::new();
         let c5 = CInt(5);
         let u = Unwrap(Box::new(c5));
-        
+
         assert_eq!(
             check(u, &env),
-            Err(String::from("[Type Error] expecting a maybe or result type value."))
+            Err(String::from(
+                "[Type Error] expecting a maybe or result type value."
+            ))
         );
     }
 
@@ -404,10 +393,6 @@ mod tests {
         let ok = COk(Box::new(bool));
         let u = Unwrap(Box::new(ok));
 
-        assert_eq!(
-            check(u, &env),
-            Ok(TBool)
-        );
+        assert_eq!(check(u, &env), Ok(TBool));
     }
-
 }
