@@ -105,44 +105,61 @@ fn check_adt_constructor(
     param_types_resolved.map(|resolved| Type::TTuple(resolved))
 }
 
-
 fn check_adt(adt: ADT, _env: &HashMap<Name, Type>) -> Result<(), String> {
-    if let ADT::DataType(ref name, constructors) = adt {
-        // Check if the ADT name is empty
-        if name.is_empty() {
-            return Err("DataType name cannot be empty".to_string());
-        }
+    match adt {
+        ADT::DataType(ref name, constructors) => {
+            if name.is_empty() {
+                return Err("DataType name cannot be empty".to_string());
+            }
+            let mut seen_constructors = std::collections::HashSet::new();
+            for constructor in &constructors {
+                match constructor {
+                    ValueConstructor::Constructor(ref constructor_name, ref types) => {
+                        if seen_constructors.contains(constructor_name) {
+                            return Err(format!("Duplicate constructor '{}' found for ADT '{}'", constructor_name, name));
+                        }
+                        seen_constructors.insert(constructor_name.clone());
 
-        let mut seen_constructors = std::collections::HashSet::new();
-        
-        for constructor in constructors {
-            if let ValueConstructor::Constructor(ref constructor_name, ref types) = constructor {
-                // Check for duplicate constructor names
-                if seen_constructors.contains(constructor_name) {
-                    return Err(format!("Duplicate constructor '{}' found for ADT '{}'", constructor_name, name));
-                }
-                seen_constructors.insert(constructor_name.clone());
+                        if constructor_name.is_empty() {
+                            return Err(format!("Constructor name cannot be empty for ADT '{}'", name));
+                        }
 
-                // Check if constructor name is empty
-                if constructor_name.is_empty() {
-                    return Err(format!("Constructor name cannot be empty for ADT '{}'", name));
-                }
+                        // Check for empty tuple
+                        if let Some(Type::TTuple(ref tuple_types)) = types.get(0) {
+                            if tuple_types.is_empty() {
+                                return Err(format!(
+                                    "Constructor '{}' in ADT '{}' cannot have an empty tuple",
+                                    constructor_name, name
+                                ));
+                            }
+                        }
 
-                // Special checks for recursive or nested ADTs
-
-                // Check for empty tuples in constructors
-                if let Some(Type::TTuple(ref tuple_types)) = types.get(0) {
-                    if tuple_types.is_empty() {
-                        return Err(format!("Constructor '{}' in ADT '{}' cannot have an empty tuple", constructor_name, name));
+                        // Check for recursive ADT correctness
+                        if constructor_name == "Cons" {
+                            if let Some(last_param) = types.last() {
+                                if let Type::TList(inner) = last_param {
+                                    if **inner != Type::TInteger {
+                                        return Err(format!(
+                                            "Constructor '{}' in ADT '{}' must reference a List<T> of the same type",
+                                            constructor_name, name
+                                        ));
+                                    }
+                                } else {
+                                    return Err(format!(
+                                        "Constructor '{}' in ADT '{}' must have its last parameter as a List<T>",
+                                        constructor_name, name
+                                    ));
+                                }
+                            }
+                        }
                     }
                 }
             }
+            Ok(())
         }
-        Ok(())
-    } else {
-        Err("Invalid ADT".to_string())
     }
 }
+
 
 
 
@@ -171,8 +188,9 @@ fn check_invalid_adt() {
             ValueConstructor::Constructor("Broken".to_string(), vec![Type::TTuple(vec![])]),
         ],
     );
-    assert!(check_adt(adt, &env).is_ok());
+    assert!(check_adt(adt, &env).is_err()); // Expecting an error
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -419,8 +437,9 @@ fn check_invalid_recursive_adt_with_mismatch() {
             ),
         ],
     );
-    assert!(check_adt(adt, &env).is_err());
+    assert!(check_adt(adt, &env).is_err()); // Should fail
 }
+
 
     #[test]
     fn check_invalid_adt_with_duplicate_constructors() {
