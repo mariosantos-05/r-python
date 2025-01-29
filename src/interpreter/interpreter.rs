@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::{Expression, Name, Statement};
+use crate::ir::ast::{Expression, Name, Statement, ValueConstructor};
 
 type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
-
+type TypeEnvironment = HashMap<Name, Vec<ValueConstructor>>; // Store ADT Definitions
 pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     match exp {
         Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
@@ -22,6 +22,14 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
+        Expression::Constructor(name, args) => {
+            let evaluated_args: Result<Vec<Box<Expression>>, ErrorMessage> = 
+                args.into_iter()
+                    .map(|arg| eval(*arg, env).map(Box::new))
+                    .collect();
+            
+            evaluated_args.map(|evaluated| Expression::Constructor(name, evaluated))
+        }
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -283,7 +291,7 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMessage> {
+pub fn execute(stmt: Statement, env: Environment, type_env: &mut TypeEnvironment) -> Result<Environment, ErrorMessage> {
     match stmt {
         Statement::Assignment(name, exp) => {
             let value = eval(*exp, &env)?;
@@ -294,9 +302,9 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
             let value = eval(*cond, &env)?;
             match value {
-                Expression::CTrue => execute(*stmt_then, env),
+                Expression::CTrue => execute(*stmt_then, env, type_env),
                 Expression::CFalse => match stmt_else {
-                    Some(else_statement) => execute(*else_statement, env),
+                    Some(else_statement) => execute(*else_statement, env, type_env),
                     None => Ok(env),
                 },
                 _ => Err(String::from("expecting a boolean value.")),
@@ -306,16 +314,20 @@ pub fn execute(stmt: Statement, env: Environment) -> Result<Environment, ErrorMe
             let mut value = eval(*cond.clone(), &env)?;
             let mut new_env = env;
             while value == Expression::CTrue {
-                new_env = execute(*stmt.clone(), new_env.clone())?;
+                new_env = execute(*stmt.clone(), new_env.clone(), type_env)?;
                 value = eval(*cond.clone(), &new_env.clone())?;
             }
-
             Ok(new_env)
         }
-        Statement::Sequence(s1, s2) => execute(*s1, env).and_then(|new_env| execute(*s2, new_env)),
+        Statement::Sequence(s1, s2) => execute(*s1, env, type_env).and_then(|new_env| execute(*s2, new_env, type_env)),
+        Statement::ADTDeclaration(name, constructors) => {
+            type_env.insert(name, constructors);
+            Ok(env)
+        }
         _ => Err(String::from("not implemented yet")),
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -493,13 +505,15 @@ mod tests {
     #[test]
     fn execute_assignment() {
         let env = HashMap::new();
-        let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)));
-
-        match execute(assign_stmt, env) {
-            Ok(new_env) => assert_eq!(new_env.get("x"), Some(&CInt(42))),
-            Err(s) => assert!(false, "{}", s),
+        let mut type_env = HashMap::new(); // Include TypeEnvironment
+        let assign_stmt = Statement::Assignment(String::from("x"), Box::new(Expression::CInt(42)));
+    
+        match execute(assign_stmt, env, &mut type_env) {
+            Ok(new_env) => assert_eq!(new_env.get("x"), Some(&Expression::CInt(42))),
+            Err(s) => panic!("{}", s), // Use `panic!` instead of `assert!(false, ...)`
         }
     }
+    
 
     #[test]
     fn eval_summation() {
@@ -516,6 +530,7 @@ mod tests {
          * 'y' must be 55.
          */
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); // Include TypeEnvironment
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(10)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
@@ -541,7 +556,7 @@ mod tests {
         let seq2 = Sequence(Box::new(a2), Box::new(while_statement));
         let program = Sequence(Box::new(a1), Box::new(seq2));
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => {
                 assert_eq!(new_env.get("y"), Some(&CInt(55)));
                 assert_eq!(new_env.get("x"), Some(&CInt(0)));
@@ -564,6 +579,7 @@ mod tests {
          * After executing, 'y' should be 1.
          */
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); // Include TypeEnvironment
 
         let condition = GT(Box::new(Var(String::from("x"))), Box::new(CInt(5)));
         let then_stmt = Assignment(String::from("y"), Box::new(CInt(1)));
@@ -578,7 +594,7 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(1))),
             Err(s) => assert!(false, "{}", s),
         }
@@ -602,6 +618,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); // Include TypeEnvironment
 
         let second_condition = LT(Box::new(Var(String::from("x"))), Box::new(CInt(0)));
         let second_then_stmt = Assignment(String::from("y"), Box::new(CInt(5)));
@@ -630,7 +647,7 @@ mod tests {
         let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)));
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => assert_eq!(new_env.get("y"), Some(&CInt(2))),
             Err(s) => assert!(false, "{}", s),
         }
@@ -657,6 +674,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); // Include TypeEnvironment
         let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(1800)));
         let a3 = Assignment(String::from("z"), Box::new(CInt(0)));
@@ -726,7 +744,7 @@ mod tests {
 
         let program = Sequence(Box::new(seq2), Box::new(while_statement));
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(43)));
                 assert_eq!(new_env.get("z"), Some(&CInt(27)));
@@ -757,6 +775,7 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); 
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(1)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(16)));
@@ -823,7 +842,7 @@ mod tests {
 
         let program = Sequence(Box::new(seq1), Box::new(while_statement));
 
-        match execute(program, env) {
+        match execute(program, env,&mut type_env) {
             Ok(new_env) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(5)));
                 assert_eq!(new_env.get("y"), Some(&CInt(7)));
@@ -850,6 +869,9 @@ mod tests {
          */
 
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); 
+
+
         let a1 = Assignment(String::from("x"), Box::new(CTrue));
         let a2 = Assignment(String::from("y"), Box::new(CInt(1)));
         let a3 = Assignment(String::from("x"), Box::new(CFalse));
@@ -877,7 +899,7 @@ mod tests {
             Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
         );
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => {
                 assert_eq!(new_env.get("x"), Some(&CFalse));
                 assert_eq!(new_env.get("y"), Some(&CInt(1073741824)));
@@ -989,6 +1011,7 @@ mod tests {
          * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
          */
         let env = HashMap::new();
+        let mut type_env = HashMap::new(); 
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(5)));
         let a2 = Assignment(String::from("y"), Box::new(CInt(0)));
@@ -1002,7 +1025,7 @@ mod tests {
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
-        match execute(program, env) {
+        match execute(program, env, &mut type_env) {
             Ok(new_env) => {
                 assert_eq!(new_env.get("x"), Some(&CInt(5)));
                 assert_eq!(new_env.get("y"), Some(&CInt(0)));
