@@ -6,6 +6,8 @@ type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
 type TypeEnvironment = HashMap<Name, Vec<ValueConstructor>>; // Store ADT Definitions
+
+
 pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
     match exp {
         Expression::Add(lhs, rhs) => add(*lhs, *rhs, env),
@@ -61,7 +63,7 @@ fn eval_binary_arith_op<F>(
     op: F,
     error_msg: &str,
 ) -> Result<Expression, ErrorMessage>
-where
+where 
     F: Fn(f64, f64) -> f64,
 {
     let v1 = eval(lhs, env)?;
@@ -1098,8 +1100,8 @@ mod tests {
         let stmt = Statement::ADTDeclaration(
             "Perhaps".to_string(),
             vec![
-                ValueConstructor::Constructor("ProbablyYes".to_string(), vec![]),
-                ValueConstructor::Constructor("ProbablyNo".to_string(), vec![]),
+                ValueConstructor {name: "probablyYes".to_string(), types: vec![]},
+                ValueConstructor {name: "probablyNo".to_string(), types: vec![]},
             ],
         );
 
@@ -1143,9 +1145,10 @@ mod tests {
         let stmt = Statement::ADTDeclaration(
             "Shape".to_string(),
             vec![
-                ValueConstructor::Constructor("Circle".to_string(), vec![Type::TInteger]),
-                ValueConstructor::Constructor("Rectangle".to_string(), vec![Type::TInteger, Type::TInteger]),
-                ValueConstructor::Constructor("Triangle".to_string(), vec![Type::TInteger, Type::TInteger]),
+                ValueConstructor { name : "Circle".to_string(), types: vec![Type::TInteger]},
+                ValueConstructor { name : "Rectangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
+                ValueConstructor { name : "Triangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
+            
             ],
         );
         

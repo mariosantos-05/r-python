@@ -8,16 +8,15 @@ pub enum Type {
     TString,
     TList(Box<Type>),
     TTuple(Vec<Type>),
+    Adt(Name, Vec<ValueConstructor>),
 }
 
 #[derive(Debug,PartialEq, Clone)]
-pub enum ValueConstructor{
-    Constructor(Name, Vec<Type>),
+pub struct  ValueConstructor{
+    pub name: Name,
+    pub types: Vec<Type> 
 }
-#[derive(Debug, PartialEq)]
-pub enum ADT {
-    DataType(Name, Vec<ValueConstructor>),
-}
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
@@ -50,8 +49,8 @@ pub enum Expression {
     GTE(Box<Expression>, Box<Expression>),
     LTE(Box<Expression>, Box<Expression>),
 
-     /* ADT Constructor */
-     Constructor(Name, Vec<Box<Expression>>), //////// NEW: ADT constructor support
+    /* ADT Constructor */
+    Constructor(Name, Vec<Box<Expression>>), // NEW: ADT constructor support
 }
 
 #[derive(Debug, PartialEq, Clone)]

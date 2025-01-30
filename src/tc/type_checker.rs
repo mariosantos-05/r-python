@@ -4,7 +4,7 @@ use crate::ir::ast::Expression;
 use crate::ir::ast::Name;
 use crate::ir::ast::Type;
 use crate::ir::ast::ValueConstructor;
-use crate::ir::ast::ADT;
+
 
 type ErrorMessage = String;
 
@@ -89,107 +89,74 @@ fn check_bin_relational_expression(
         _ => Err(String::from("[Type Error] expecting numeric type values.")),
     }
 }
+
 fn check_adt_constructor(
-    ValueConstructor::Constructor(_name, param_types): ValueConstructor,
+    value_constructor: ValueConstructor, // Directly use the ValueConstructor
     _env: &Environment,
 ) -> Result<Type, ErrorMessage> {
-    let param_types_resolved: Result<Vec<Type>, ErrorMessage> = param_types
+    let ValueConstructor { name, types } = value_constructor; // Destructure directly
+
+    // Resolve parameter types
+    let param_types_resolved: Result<Vec<Type>, ErrorMessage> = types
         .into_iter()
         .map(|param_type| match param_type {
             Type::TInteger | Type::TBool | Type::TReal | Type::TString => Ok(param_type),
             Type::TList(inner) => Ok(Type::TList(inner)),
             Type::TTuple(inner) => Ok(Type::TTuple(inner)),
+            _ => Err(format!("Unsupported type in constructor '{}'", name)), // Handle unsupported types
         })
         .collect();
-    
+
+    // Return a resolved tuple type for the constructor
     param_types_resolved.map(|resolved| Type::TTuple(resolved))
 }
 
-fn check_adt(adt: ADT, _env: &HashMap<Name, Type>) -> Result<(), String> {
-    match adt {
-        ADT::DataType(ref name, constructors) => {
-            if name.is_empty() {
-                return Err("DataType name cannot be empty".to_string());
+fn check_adt(adt: Type, _env: &HashMap<Name, Type>) -> Result<(), String> {
+    if let Type::Adt(name, constructors) = adt {
+        if name.is_empty() {
+            return Err("DataType name cannot be empty".to_string());
+        }
+
+        let mut seen_constructors = std::collections::HashSet::new();
+
+        for constructor in constructors {
+            let ValueConstructor { name: constructor_name, types } = constructor;
+
+            // Check for duplicate or empty constructor names
+            if seen_constructors.contains(&constructor_name) {
+                return Err(format!("Duplicate constructor '{}' for ADT '{}'", constructor_name, name));
             }
-            let mut seen_constructors = std::collections::HashSet::new();
-            for constructor in &constructors {
-                match constructor {
-                    ValueConstructor::Constructor(ref constructor_name, ref types) => {
-                        if seen_constructors.contains(constructor_name) {
-                            return Err(format!("Duplicate constructor '{}' found for ADT '{}'", constructor_name, name));
-                        }
-                        seen_constructors.insert(constructor_name.clone());
+            if constructor_name.is_empty() {
+                return Err(format!("Constructor name cannot be empty for ADT '{}'", name));
+            }
+            seen_constructors.insert(constructor_name.clone());
 
-                        if constructor_name.is_empty() {
-                            return Err(format!("Constructor name cannot be empty for ADT '{}'", name));
-                        }
-
-                        // Check for empty tuple
-                        if let Some(Type::TTuple(ref tuple_types)) = types.get(0) {
-                            if tuple_types.is_empty() {
-                                return Err(format!(
-                                    "Constructor '{}' in ADT '{}' cannot have an empty tuple",
-                                    constructor_name, name
-                                ));
-                            }
-                        }
-
-                        // Check for recursive ADT correctness
-                        if constructor_name == "Cons" {
-                            if let Some(last_param) = types.last() {
-                                if let Type::TList(inner) = last_param {
-                                    if **inner != Type::TInteger {
-                                        return Err(format!(
-                                            "Constructor '{}' in ADT '{}' must reference a List<T> of the same type",
-                                            constructor_name, name
-                                        ));
-                                    }
-                                } else {
-                                    return Err(format!(
-                                        "Constructor '{}' in ADT '{}' must have its last parameter as a List<T>",
-                                        constructor_name, name
-                                    ));
-                                }
-                            }
-                        }
-                    }
+            // Ensure tuple types are not empty
+            if let Some(Type::TTuple(ref tuple_types)) = types.get(0) {
+                if tuple_types.is_empty() {
+                    return Err(format!("Constructor '{}' in ADT '{}' cannot have an empty tuple", constructor_name, name));
                 }
             }
-            Ok(())
+
+            // Specific check for "Cons" constructor
+            if constructor_name == "Cons" {
+                if let Some(Type::TList(inner)) = types.last() {
+                    if **inner != Type::TInteger {
+                        return Err(format!("'Cons' constructor in ADT '{}' must reference a List<T> of the same type", name));
+                    }
+                } else {
+                    return Err(format!("'Cons' constructor in ADT '{}' must have a List<T> as its last parameter", name));
+                }
+            }
         }
+
+        Ok(())
+    } else {
+        Err("Invalid ADT structure".to_string())
     }
 }
 
 
-
-
-
-
-
-#[test]
-fn check_valid_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Option".to_string(),
-        vec![
-            ValueConstructor::Constructor("Some".to_string(), vec![Type::TInteger]),
-            ValueConstructor::Constructor("None".to_string(), vec![]),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_invalid_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Invalid".to_string(),
-        vec![
-            ValueConstructor::Constructor("Broken".to_string(), vec![Type::TTuple(vec![])]),
-        ],
-    );
-    assert!(check_adt(adt, &env).is_err()); // Expecting an error
-}
 
 
 #[cfg(test)]
@@ -198,6 +165,46 @@ mod tests {
 
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Type::*;
+
+
+#[test]
+fn check_valid_adt() {
+    let env = HashMap::new();
+    
+    let adt = Type::Adt(
+        "Option".to_string(),
+        vec![
+            ValueConstructor {
+                name: "Some".to_string(),
+                types: vec![Type::TInteger],
+            },
+            ValueConstructor {
+                name: "None".to_string(),
+                types: vec![],
+            },
+        ],
+    );
+
+    assert_eq!(check_adt(adt, &env), Ok(()));
+}
+
+#[test]
+fn check_invalid_adt() {
+    let env = HashMap::new();
+    
+    let adt = Type::Adt(
+        "Invalid".to_string(),
+        vec![
+            ValueConstructor {
+                name: "Broken".to_string(),
+                types: vec![Type::TTuple(vec![])],
+            },
+        ],
+    );
+
+    assert!(check_adt(adt, &env).is_err()); // Expecting an error due to the empty tuple
+}
+
 
     #[test]
     fn check_tlist_comparison() {
@@ -329,153 +336,188 @@ mod tests {
         );
     }
 
-
     #[test]
-fn check_valid_simple_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Option".to_string(),
-        vec![
-            ValueConstructor::Constructor("Some".to_string(), vec![Type::TInteger]),
-            ValueConstructor::Constructor("None".to_string(), vec![]),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_valid_complex_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Result".to_string(),
-        vec![
-            ValueConstructor::Constructor("Ok".to_string(), vec![Type::TString]),
-            ValueConstructor::Constructor("Err".to_string(), vec![Type::TBool]),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_invalid_adt_with_empty_name() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "".to_string(),
-        vec![ValueConstructor::Constructor("None".to_string(), vec![])],
-    );
-    assert!(check_adt(adt, &env).is_err());
-}
-
-#[test]
-fn check_invalid_constructor_with_empty_name() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Option".to_string(),
-        vec![ValueConstructor::Constructor("".to_string(), vec![Type::TInteger])],
-    );
-    assert!(check_adt(adt, &env).is_err());
-}
-
-#[test]
-fn check_valid_nested_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Tree".to_string(),
-        vec![
-            ValueConstructor::Constructor("Leaf".to_string(), vec![Type::TInteger]),
-            ValueConstructor::Constructor(
-                "Node".to_string(),
-                vec![Type::TTuple(vec![Type::TInteger, Type::TList(Box::new(Type::TInteger))])],
-            ),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_invalid_nested_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Tree".to_string(),
-        vec![
-            ValueConstructor::Constructor("Leaf".to_string(), vec![Type::TInteger]),
-            ValueConstructor::Constructor(
-                "Node".to_string(),
-                vec![Type::TTuple(vec![])], // Invalid: Empty tuple
-            ),
-        ],
-    );
-    assert!(check_adt(adt, &env).is_err()); // Expect error for empty tuple
-}
-
-#[test]
-fn check_valid_recursive_adt() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "List".to_string(),
-        vec![
-            ValueConstructor::Constructor("Nil".to_string(), vec![]),
-            ValueConstructor::Constructor(
-                "Cons".to_string(),
-                vec![Type::TInteger, Type::TList(Box::new(Type::TInteger))],
-            ),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_invalid_recursive_adt_with_mismatch() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "List".to_string(),
-        vec![
-            ValueConstructor::Constructor("Nil".to_string(), vec![]),
-            ValueConstructor::Constructor(
-                "Cons".to_string(),
-                vec![Type::TInteger, Type::TBool], // Invalid: Second parameter is not a list
-            ),
-        ],
-    );
-    assert!(check_adt(adt, &env).is_err()); // Should fail
-}
-
-
+    fn check_valid_simple_adt() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Option".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Some".to_string(),
+                    types: vec![Type::TInteger],
+                },
+                ValueConstructor {
+                    name: "None".to_string(),
+                    types: vec![],
+                },
+            ],
+        );
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
+    #[test]
+    fn check_valid_complex_adt() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Result".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Ok".to_string(),
+                    types: vec![Type::TString],
+                },
+                ValueConstructor {
+                    name: "Err".to_string(),
+                    types: vec![Type::TBool],
+                },
+            ],
+        );
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
+    #[test]
+    fn check_invalid_adt_with_empty_name() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "".to_string(),
+            vec![ValueConstructor {
+                name: "None".to_string(),
+                types: vec![],
+            }],
+        );
+        assert!(check_adt(adt, &env).is_err());
+    }
+    
+    #[test]
+    fn check_invalid_constructor_with_empty_name() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Option".to_string(),
+            vec![ValueConstructor {
+                name: "".to_string(),
+                types: vec![Type::TInteger],
+            }],
+        );
+        assert!(check_adt(adt, &env).is_err());
+    }
+    
+    #[test]
+    fn check_valid_nested_adt() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Tree".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Leaf".to_string(),
+                    types: vec![Type::TInteger],
+                },
+                ValueConstructor {
+                    name: "Node".to_string(),
+                    types: vec![Type::TTuple(vec![Type::TInteger, Type::TList(Box::new(Type::TInteger))])],
+                },
+            ],
+        );
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
+    #[test]
+    fn check_invalid_nested_adt() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Tree".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Leaf".to_string(),
+                    types: vec![Type::TInteger],
+                },
+                ValueConstructor {
+                    name: "Node".to_string(),
+                    types: vec![Type::TTuple(vec![])], // Invalid: Empty tuple
+                },
+            ],
+        );
+        assert!(check_adt(adt, &env).is_err()); // Expect error for empty tuple
+    }
+    
+    #[test]
+    fn check_valid_recursive_adt() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "List".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Nil".to_string(),
+                    types: vec![],
+                },
+                ValueConstructor {
+                    name: "Cons".to_string(),
+                    types: vec![Type::TInteger, Type::TList(Box::new(Type::TInteger))],
+                },
+            ],
+        );
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
+    #[test]
+    fn check_invalid_recursive_adt_with_mismatch() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "List".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Nil".to_string(),
+                    types: vec![],
+                },
+                ValueConstructor {
+                    name: "Cons".to_string(),
+                    types: vec![Type::TInteger, Type::TBool], // Invalid: Second parameter is not a list
+                },
+            ],
+        );
+        assert!(check_adt(adt, &env).is_err()); // Should fail
+    }
+    
     #[test]
     fn check_invalid_adt_with_duplicate_constructors() {
         let env = HashMap::new();
-        let adt = ADT::DataType(
+        let adt = Type::Adt(
             "Option".to_string(),
             vec![
-                ValueConstructor::Constructor("Some".to_string(), vec![Type::TInteger]),
-                ValueConstructor::Constructor("Some".to_string(), vec![Type::TBool]), // Duplicate constructor name
+                ValueConstructor {
+                    name: "Some".to_string(),
+                    types: vec![Type::TInteger],
+                },
+                ValueConstructor {
+                    name: "Some".to_string(),
+                    types: vec![Type::TBool], // Duplicate constructor name
+                },
             ],
         );
         assert!(check_adt(adt, &env).is_err());
     }
-
-#[test]
-fn check_valid_adt_with_list_and_tuple() {
-    let env = HashMap::new();
-    let adt = ADT::DataType(
-        "Complex".to_string(),
-        vec![
-            ValueConstructor::Constructor(
-                "Wrapper".to_string(),
-                vec![
-                    Type::TList(Box::new(Type::TInteger)),
-                    Type::TTuple(vec![Type::TInteger, Type::TString]),
-                ],
-            ),
-        ],
-    );
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
-
-#[test]
-fn check_adt_with_empty_constructors_list() {
-    let env = HashMap::new();
-    let adt = ADT::DataType("Empty".to_string(), vec![]); // Valid ADT with no constructors
-    assert_eq!(check_adt(adt, &env), Ok(()));
-}
+    
+    #[test]
+    fn check_valid_adt_with_list_and_tuple() {
+        let env = HashMap::new();
+        let adt = Type::Adt(
+            "Complex".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Wrapper".to_string(),
+                    types: vec![
+                        Type::TList(Box::new(Type::TInteger)),
+                        Type::TTuple(vec![Type::TInteger, Type::TString]),
+                    ],
+                },
+            ],
+        );
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
+    #[test]
+    fn check_adt_with_empty_constructors_list() {
+        let env = HashMap::new();
+        let adt = Type::Adt("Empty".to_string(), vec![]); // Valid ADT with no constructors
+        assert_eq!(check_adt(adt, &env), Ok(()));
+    }
+    
 }
