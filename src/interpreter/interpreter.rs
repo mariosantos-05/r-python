@@ -1034,4 +1034,162 @@ mod tests {
             Err(s) => assert!(false, "{}", s),
         }
     }
+
+    #[test]
+    fn evaluate_simple_constructor() {
+        let env = HashMap::new();
+        let expr = Expression::Constructor(
+            "Some".to_string(),
+            vec![Box::new(Expression::CInt(42))],
+        );
+
+        let result = eval(expr, &env);
+        assert_eq!(result, Ok(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
+    }
+
+    #[test]
+    fn evaluate_constructor_with_expression() {
+        let env = HashMap::new();
+        let expr = Expression::Constructor(
+            "Some".to_string(),
+            vec![Box::new(Expression::Add(
+                Box::new(Expression::CInt(10)),
+                Box::new(Expression::CInt(32)),
+            ))],
+        );
+
+        let result = eval(expr, &env);
+        assert_eq!(result, Ok(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
+    }
+
+    #[test]
+    fn evaluate_nested_constructors() {
+        let env = HashMap::new();
+        let expr = Expression::Constructor(
+            "Pair".to_string(),
+            vec![
+                Box::new(Expression::Constructor(
+                    "Some".to_string(),
+                    vec![Box::new(Expression::CInt(10))],
+                )),
+                Box::new(Expression::CInt(20)),
+            ],
+        );
+
+        let result = eval(expr, &env);
+        assert_eq!(
+            result,
+            Ok(Expression::Constructor(
+                "Pair".to_string(),
+                vec![
+                    Box::new(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(10))])),
+                    Box::new(Expression::CInt(20))
+                ]
+            ))
+        );
+    }
+
+    #[test]
+    fn execute_perhaps_adt() {
+        let env = HashMap::new();
+        let mut type_env = HashMap::new();
+
+        // Declare the Perhaps ADT correctly
+        let stmt = Statement::ADTDeclaration(
+            "Perhaps".to_string(),
+            vec![
+                ValueConstructor::Constructor("ProbablyYes".to_string(), vec![]),
+                ValueConstructor::Constructor("ProbablyNo".to_string(), vec![]),
+            ],
+        );
+
+        let result = execute(stmt, env.clone(), &mut type_env);
+
+        // Check if declaration was successful
+        assert!(result.is_ok());
+        assert!(type_env.contains_key("Perhaps"));
+        assert_eq!(type_env.get("Perhaps").unwrap().len(), 2);
+
+        // Evaluate `Perhaps::ProbablyYes(42)`
+        let expr = Expression::Constructor(
+            "ProbablyYes".to_string(),
+            vec![Box::new(Expression::CInt(42))],
+        );
+
+        let eval_result = eval(expr, &env);
+        assert_eq!(
+            eval_result,
+            Ok(Expression::Constructor(
+                "ProbablyYes".to_string(),
+                vec![Box::new(Expression::CInt(42))]
+            ))
+        );
+
+        // Evaluate `Perhaps::ProbablyNo`
+        let expr_no = Expression::Constructor("ProbablyNo".to_string(), vec![]);
+        let eval_no = eval(expr_no, &env);
+        assert_eq!(eval_no, Ok(Expression::Constructor("ProbablyNo".to_string(), vec![])));
+    }
+
+
+    #[test]
+    fn test_adt_geometric_shapes() {
+        use crate::ir::ast::Type;
+
+        let env = HashMap::new();
+        let mut type_env = HashMap::new();
+
+        // Declare the Shape ADT
+        let stmt = Statement::ADTDeclaration(
+            "Shape".to_string(),
+            vec![
+                ValueConstructor::Constructor("Circle".to_string(), vec![Type::TInteger]),
+                ValueConstructor::Constructor("Rectangle".to_string(), vec![Type::TInteger, Type::TInteger]),
+                ValueConstructor::Constructor("Triangle".to_string(), vec![Type::TInteger, Type::TInteger]),
+            ],
+        );
+        
+
+        // Execute the ADT declaration
+        let result = execute(stmt, env.clone(), &mut type_env);
+        assert!(result.is_ok());
+        assert!(type_env.contains_key("Shape"));
+        assert_eq!(type_env.get("Shape").unwrap().len(), 3);
+
+        // Test Circle(10)
+        let expr_circle = Expression::Constructor(
+            "Circle".to_string(),
+            vec![Box::new(Expression::CInt(10))],
+        );
+        let eval_circle = eval(expr_circle.clone(), &env);
+        assert_eq!(eval_circle, Ok(expr_circle));
+
+        // Test Rectangle(4, 5)
+        let expr_rectangle = Expression::Constructor(
+            "Rectangle".to_string(),
+            vec![
+                Box::new(Expression::CInt(4)),
+                Box::new(Expression::CInt(5)),
+            ],
+        );
+        let eval_rectangle = eval(expr_rectangle.clone(), &env);
+        assert_eq!(eval_rectangle, Ok(expr_rectangle));
+
+        // Test Triangle(3, 6)
+        let expr_triangle = Expression::Constructor(
+            "Triangle".to_string(),
+            vec![
+                Box::new(Expression::CInt(3)),
+                Box::new(Expression::CInt(6)),
+            ],
+        );
+        let eval_triangle = eval(expr_triangle.clone(), &env);
+        assert_eq!(eval_triangle, Ok(expr_triangle));
+    }
+
+
+
 }
+
+
+
