@@ -24,7 +24,7 @@ pub fn eval(exp: Expression, env: &Environment, type_env: &TypeEnvironment) -> R
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env, type_env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env, type_env),
         Expression::Var(name) => lookup(name, env),
-        Expression::Constructor(name, args) => constructor_eval(name, args, env, type_env),
+        Expression::ADTConstructor(name, args) => constructor_eval(name, args, env, type_env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
@@ -58,7 +58,7 @@ fn constructor_eval(
                 .map(|arg| eval(*arg, env, type_env).map(Box::new))
                 .collect();
 
-        evaluated_args.map(|evaluated| Expression::Constructor(name, evaluated))
+        evaluated_args.map(|evaluated| Expression::ADTConstructor(name, evaluated))
     } else {
         Err(format!("Erro: Construtor {} não encontrado", name))
     }
@@ -1156,13 +1156,13 @@ mod tests {
             types: vec![Type::TInteger], // Ajuste o tipo conforme necessário
         }]);
         
-        let expr = Expression::Constructor(
+        let expr = Expression::ADTConstructor(
             "Some".to_string(),
             vec![Box::new(Expression::CInt(42))],
         );
 
         let result = eval(expr, &env, &type_env);
-        assert_eq!(result, Ok(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
+        assert_eq!(result, Ok(Expression::ADTConstructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
     }
 
     #[test] 
@@ -1173,7 +1173,7 @@ mod tests {
             name: "Some".to_string(), 
             types: vec![Type::TInteger], // Ajuste o tipo conforme necessário
         }]);
-        let expr = Expression::Constructor(
+        let expr = Expression::ADTConstructor(
             "Some".to_string(),
             vec![Box::new(Expression::Add(
                 Box::new(Expression::CInt(10)),
@@ -1182,7 +1182,7 @@ mod tests {
         );
 
         let result = eval(expr, &env, &type_env);
-        assert_eq!(result, Ok(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
+        assert_eq!(result, Ok(Expression::ADTConstructor("Some".to_string(), vec![Box::new(Expression::CInt(42))])));
     }
 
     #[test]
@@ -1198,10 +1198,10 @@ mod tests {
             types: vec![Type::TInteger, Type::TInteger],  // Ajuste os tipos conforme necessário
         }]);
 
-        let expr = Expression::Constructor(
+        let expr = Expression::ADTConstructor(
             "Pair".to_string(),
             vec![
-                Box::new(Expression::Constructor(
+                Box::new(Expression::ADTConstructor(
                     "Some".to_string(),
                     vec![Box::new(Expression::CInt(10))],
                 )),
@@ -1212,10 +1212,10 @@ mod tests {
         let result = eval(expr, &env, &type_env);
         assert_eq!(
             result,
-            Ok(Expression::Constructor(
+            Ok(Expression::ADTConstructor(
                 "Pair".to_string(),
                 vec![
-                    Box::new(Expression::Constructor("Some".to_string(), vec![Box::new(Expression::CInt(10))])),
+                    Box::new(Expression::ADTConstructor("Some".to_string(), vec![Box::new(Expression::CInt(10))])),
                     Box::new(Expression::CInt(20))
                 ]
             ))
@@ -1248,7 +1248,7 @@ mod tests {
         assert_eq!(type_env.get("Shape").unwrap().len(), 3);
 
         // Test Circle(10)
-        let expr_circle = Expression::Constructor(
+        let expr_circle = Expression::ADTConstructor(
             "Circle".to_string(),
             vec![Box::new(Expression::CInt(10))],
         );
@@ -1256,7 +1256,7 @@ mod tests {
         assert_eq!(eval_circle, Ok(expr_circle));
 
         // Test Rectangle(4, 5)
-        let expr_rectangle = Expression::Constructor(
+        let expr_rectangle = Expression::ADTConstructor(
             "Rectangle".to_string(),
             vec![
                 Box::new(Expression::CInt(4)),
@@ -1267,7 +1267,7 @@ mod tests {
         assert_eq!(eval_rectangle, Ok(expr_rectangle));
 
         // Test Triangle(3, 6)
-        let expr_triangle = Expression::Constructor(
+        let expr_triangle = Expression::ADTConstructor(
             "Triangle".to_string(),
             vec![
                 Box::new(Expression::CInt(3)),

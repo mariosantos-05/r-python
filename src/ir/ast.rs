@@ -50,7 +50,7 @@ pub enum Expression {
     LTE(Box<Expression>, Box<Expression>),
 
     /* ADT Constructor */
-    Constructor(Name, Vec<Box<Expression>>), // NEW: ADT constructor support
+    ADTConstructor(Name, Vec<Box<Expression>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
