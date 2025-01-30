@@ -8,7 +8,7 @@ pub enum Type {
     TString,
     TList(Box<Type>),
     TTuple(Vec<Type>),
-    Adt(Name, Vec<ValueConstructor>),
+    Tadt(Name, Vec<ValueConstructor>),
 }
 
 #[derive(Debug,PartialEq, Clone)]

@@ -112,7 +112,7 @@ fn check_adt_constructor(
 }
 
 fn check_adt(adt: Type, _env: &HashMap<Name, Type>) -> Result<(), String> {
-    if let Type::Adt(name, constructors) = adt {
+    if let Type::Tadt(name, constructors) = adt {
         if name.is_empty() {
             return Err("DataType name cannot be empty".to_string());
         }
@@ -171,7 +171,7 @@ mod tests {
 fn check_valid_adt() {
     let env = HashMap::new();
     
-    let adt = Type::Adt(
+    let adt = Type::Tadt(
         "Option".to_string(),
         vec![
             ValueConstructor {
@@ -192,7 +192,7 @@ fn check_valid_adt() {
 fn check_invalid_adt() {
     let env = HashMap::new();
     
-    let adt = Type::Adt(
+    let adt = Type::Tadt(
         "Invalid".to_string(),
         vec![
             ValueConstructor {
@@ -339,7 +339,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_valid_simple_adt() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Option".to_string(),
             vec![
                 ValueConstructor {
@@ -358,7 +358,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_valid_complex_adt() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Result".to_string(),
             vec![
                 ValueConstructor {
@@ -377,7 +377,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_invalid_adt_with_empty_name() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "".to_string(),
             vec![ValueConstructor {
                 name: "None".to_string(),
@@ -390,7 +390,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_invalid_constructor_with_empty_name() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Option".to_string(),
             vec![ValueConstructor {
                 name: "".to_string(),
@@ -403,7 +403,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_valid_nested_adt() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Tree".to_string(),
             vec![
                 ValueConstructor {
@@ -422,7 +422,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_invalid_nested_adt() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Tree".to_string(),
             vec![
                 ValueConstructor {
@@ -441,7 +441,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_valid_recursive_adt() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "List".to_string(),
             vec![
                 ValueConstructor {
@@ -460,7 +460,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_invalid_recursive_adt_with_mismatch() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "List".to_string(),
             vec![
                 ValueConstructor {
@@ -479,7 +479,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_invalid_adt_with_duplicate_constructors() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Option".to_string(),
             vec![
                 ValueConstructor {
@@ -498,7 +498,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_valid_adt_with_list_and_tuple() {
         let env = HashMap::new();
-        let adt = Type::Adt(
+        let adt = Type::Tadt(
             "Complex".to_string(),
             vec![
                 ValueConstructor {
@@ -516,7 +516,7 @@ fn check_invalid_adt() {
     #[test]
     fn check_adt_with_empty_constructors_list() {
         let env = HashMap::new();
-        let adt = Type::Adt("Empty".to_string(), vec![]); // Valid ADT with no constructors
+        let adt = Type::Tadt("Empty".to_string(), vec![]); // Valid ADT with no constructors
         assert_eq!(check_adt(adt, &env), Ok(()));
     }
     
