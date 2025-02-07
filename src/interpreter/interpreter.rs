@@ -1,11 +1,11 @@
-use crate::ir::ast::{Environment, Expression, Name, Statement, Function};
+use crate::ir::ast::{Environment, Expression, Function, Name, Statement};
 
 type ErrorMessage = String;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvValue {
     Exp(Expression),
-    Func(Function)
+    Func(Function),
 }
 
 pub enum ControlFlow {
@@ -34,16 +34,13 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
     }
 }
 
-pub fn execute(
-    stmt: Statement,
-    env: &Environment<EnvValue>,
-) -> Result<ControlFlow, ErrorMessage> {
+pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
 
     match stmt {
         Statement::Assignment(name, exp, _) => {
             let value = eval(*exp, &new_env)?;
-            
+
             new_env.insert_variable(name, value);
 
             Ok(ControlFlow::Continue(new_env))
@@ -56,7 +53,7 @@ pub fn execute(
             } else {
                 match stmt_else {
                     Some(stmt_else) => execute(*stmt_else, &new_env),
-                    None => Ok(ControlFlow::Continue(new_env))
+                    None => Ok(ControlFlow::Continue(new_env)),
                 }
             }
         }
@@ -65,15 +62,13 @@ pub fn execute(
 
             loop {
                 match value {
-                    EnvValue::Exp(Expression::CTrue) => {
-                        match execute(*stmt.clone(), &new_env)? {
-                            ControlFlow::Continue(control_env) => {
-                                new_env = control_env;
-                                value = eval(*cond.clone(), &new_env)?;
-                            }
-                            ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                    EnvValue::Exp(Expression::CTrue) => match execute(*stmt.clone(), &new_env)? {
+                        ControlFlow::Continue(control_env) => {
+                            new_env = control_env;
+                            value = eval(*cond.clone(), &new_env)?;
                         }
-                    }
+                        ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                    },
                     EnvValue::Exp(Expression::CFalse) => return Ok(ControlFlow::Continue(new_env)),
                     _ => unreachable!(),
                 }
@@ -86,9 +81,9 @@ pub fn execute(
             }
             ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
         },
-        Statement::FuncDef(func) =>  {
+        Statement::FuncDef(func) => {
             new_env.insert_variable(func.name.clone(), EnvValue::Func(func));
-            
+
             Ok(ControlFlow::Continue(new_env))
         }
         Statement::Return(exp) => {
@@ -99,7 +94,11 @@ pub fn execute(
     }
 }
 
-fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn call(
+    name: Name,
+    args: Vec<Expression>,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     let mut new_env = env.clone();
 
     if let Ok(EnvValue::Func(func)) = lookup(name, &new_env) {
@@ -109,7 +108,7 @@ fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Resul
             for (arg, (param, _)) in args.iter().zip(params) {
                 let value = eval(arg.clone(), &new_env)?;
                 new_env.insert_variable(param, value);
-            }   
+            }
         }
 
         if let None = new_env.search_frame(func.name.clone()) {
@@ -119,16 +118,16 @@ fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Resul
         match execute(*func.body.unwrap(), &new_env)? {
             ControlFlow::Return(value) => {
                 new_env.remove_frame();
-                return Ok(value)
+                return Ok(value);
             }
-            ControlFlow::Continue(_) => unreachable!()
+            ControlFlow::Continue(_) => unreachable!(),
         }
     }
     unreachable!()
 }
 
 fn is_constant(exp: Expression) -> bool {
-    match exp { 
+    match exp {
         Expression::CTrue => true,
         Expression::CFalse => true,
         Expression::CInt(_) => true,
@@ -146,7 +145,7 @@ fn lookup(name: String, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMe
 
         match frame.variables.get(&name) {
             Some(value) => return Ok(value.clone()),
-            None => curr_scope = frame.parent_key.clone().unwrap()
+            None => curr_scope = frame.parent_key.clone().unwrap(),
         }
     }
 }
@@ -181,7 +180,11 @@ where
     }
 }
 
-fn add(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn add(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -191,7 +194,11 @@ fn add(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<
     )
 }
 
-fn sub(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn sub(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -201,7 +208,11 @@ fn sub(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<
     )
 }
 
-fn mul(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn mul(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -211,7 +222,11 @@ fn mul(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<
     )
 }
 
-fn div(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn div(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_arith_op(
         lhs,
         rhs,
@@ -251,7 +266,11 @@ where
     }
 }
 
-fn and(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn and(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -267,7 +286,11 @@ fn and(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<
     )
 }
 
-fn or(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn or(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_boolean_op(
         lhs,
         rhs,
@@ -322,7 +345,11 @@ where
     }
 }
 
-fn eq(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn eq(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -338,7 +365,11 @@ fn eq(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<E
     )
 }
 
-fn gt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn gt(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -354,7 +385,11 @@ fn gt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<E
     )
 }
 
-fn lt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn lt(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -370,7 +405,11 @@ fn lt(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<E
     )
 }
 
-fn gte(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn gte(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -386,7 +425,11 @@ fn gte(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<
     )
 }
 
-fn lte(lhs: Expression, rhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
+fn lte(
+    lhs: Expression,
+    rhs: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
     eval_binary_rel_op(
         lhs,
         rhs,
@@ -414,7 +457,7 @@ mod tests {
     #[test]
     fn eval_constant() {
         let env: Environment<EnvValue> = Environment::new();
-        
+
         let c10 = CInt(10);
         let c20 = CInt(20);
 
@@ -878,7 +921,7 @@ mod tests {
          *
          * After executing, 'x' should be 5, 'y' should be 0, and 'z' should be 13.
          */
-       
+
         let env: Environment<EnvValue> = Environment::new();
 
         let a1 = Assignment(String::from("x"), Box::new(CInt(5)), Some(TInteger));
@@ -902,7 +945,7 @@ mod tests {
                 );
                 assert_eq!(
                     new_env.search_frame("y".to_string()),
-                    Some(&EnvValue::Exp(CInt(0)))   
+                    Some(&EnvValue::Exp(CInt(0)))
                 );
                 assert_eq!(
                     new_env.search_frame("z".to_string()),
@@ -913,7 +956,7 @@ mod tests {
             Err(s) => assert!(false, "{}", s),
         }
     }
-    
+
     #[test]
     fn recursive_func_def_call() {
         /*
@@ -932,43 +975,41 @@ mod tests {
          *
          * After executing, 'fib' should be 34.
          */
-        
+
         let env: Environment<EnvValue> = Environment::new();
 
-        let func = FuncDef(
-            Function {
-                name: "fibonacci".to_string(),
-                kind: Some(TInteger),
-                params: Some(vec![("n".to_string(), TInteger)]),
-                body: Some(Box::new(Sequence(
+        let func = FuncDef(Function {
+            name: "fibonacci".to_string(),
+            kind: Some(TInteger),
+            params: Some(vec![("n".to_string(), TInteger)]),
+            body: Some(Box::new(Sequence(
+                Box::new(IfThenElse(
+                    Box::new(LT(Box::new(Var("n".to_string())), Box::new(CInt(1)))),
+                    Box::new(Return(Box::new(CInt(0)))),
+                    None,
+                )),
+                Box::new(Sequence(
                     Box::new(IfThenElse(
-                        Box::new(LT(Box::new(Var("n".to_string())), Box::new(CInt(1)))),
-                        Box::new(Return(Box::new(CInt(0)))),
+                        Box::new(LTE(Box::new(Var("n".to_string())), Box::new(CInt(2)))),
+                        Box::new(Return(Box::new(Sub(
+                            Box::new(Var("n".to_string())),
+                            Box::new(CInt(1)),
+                        )))),
                         None,
                     )),
-                    Box::new(Sequence(
-                        Box::new(IfThenElse(
-                            Box::new(LTE(Box::new(Var("n".to_string())), Box::new(CInt(2)))),
-                            Box::new(Return(Box::new(Sub(
-                                Box::new(Var("n".to_string())),
-                                Box::new(CInt(1)),
-                            )))),
-                            None,
+                    Box::new(Return(Box::new(Add(
+                        Box::new(FuncCall(
+                            "fibonacci".to_string(),
+                            vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(1)))],
                         )),
-                        Box::new(Return(Box::new(Add(
-                            Box::new(FuncCall(
-                                "fibonacci".to_string(),
-                                vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(1)))],
-                            )),
-                            Box::new(FuncCall(
-                                "fibonacci".to_string(),
-                                vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(2)))],
-                            )),
-                        )))),
-                    )),
-                )))
-            },
-        );
+                        Box::new(FuncCall(
+                            "fibonacci".to_string(),
+                            vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(2)))],
+                        )),
+                    )))),
+                )),
+            ))),
+        });
 
         let program = Sequence(
             Box::new(func),

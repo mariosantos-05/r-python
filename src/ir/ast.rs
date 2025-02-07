@@ -6,7 +6,7 @@ use std::collections::HashMap;
 pub struct Frame<A> {
     pub parent_function: Option<Function>,
     pub parent_key: Option<(Name, i32)>,
-    pub variables: HashMap<Name, A>
+    pub variables: HashMap<Name, A>,
 }
 
 impl<A> Frame<A> {
@@ -16,8 +16,8 @@ impl<A> Frame<A> {
         return Frame {
             parent_function: func,
             parent_key: key,
-            variables
-        }
+            variables,
+        };
     }
 }
 
@@ -25,52 +25,63 @@ impl<A> Frame<A> {
 pub struct Environment<A> {
     pub scope: Function,
     pub recursion: i32,
-    pub stack: HashMap<(Name, i32), Frame<A>>
+    pub stack: HashMap<(Name, i32), Frame<A>>,
 }
 
 impl<A> Environment<A> {
     pub fn new() -> Environment<A> {
         let frame: Frame<A> = Frame::new(None, None);
         let scope = Function::new();
-        
+
         return Environment {
             scope,
             recursion: 0,
-            stack: HashMap::from([(("__main__".to_string(), 0), frame)])
+            stack: HashMap::from([(("__main__".to_string(), 0), frame)]),
         };
     }
 
     pub fn scope_key(&self) -> (Name, i32) {
-        return (self.scope_name(), self.recursion)
+        return (self.scope_name(), self.recursion);
     }
 
     pub fn scope_name(&self) -> Name {
-        return self.scope.name.clone()
+        return self.scope.name.clone();
     }
 
     pub fn scope_return(&self) -> Option<&A> {
-        return self.search_frame(self.scope_name())
+        return self.search_frame(self.scope_name());
     }
 
     pub fn get_frame(&self, key: (Name, i32)) -> &Frame<A> {
-        return self.stack.get(&key).unwrap()
+        return self.stack.get(&key).unwrap();
     }
 
     pub fn search_frame(&self, name: Name) -> Option<&A> {
-        return self.stack.get(&self.scope_key()).unwrap().variables.get(&name)
+        return self
+            .stack
+            .get(&self.scope_key())
+            .unwrap()
+            .variables
+            .get(&name);
     }
 
     pub fn insert_frame(&mut self, func: Function) -> () {
         let new_frame: Frame<A> = Frame::new(Some(self.scope.clone()), Some(self.scope_key()));
 
-        self.stack.insert((func.name.clone(), self.scope_key().1 + 1), new_frame);
+        self.stack
+            .insert((func.name.clone(), self.scope_key().1 + 1), new_frame);
         self.scope = func;
         self.recursion += 1;
     }
 
     pub fn remove_frame(&mut self) -> () {
         let recursion = self.scope_key().1 - 1;
-        self.scope = self.stack.remove(&self.scope_key()).unwrap().parent_function.unwrap();
+        self.scope = self
+            .stack
+            .remove(&self.scope_key())
+            .unwrap()
+            .parent_function
+            .unwrap();
         self.recursion = recursion;
     }
 
@@ -91,12 +102,12 @@ pub struct Function {
 
 impl Function {
     pub fn new() -> Function {
-        return Function { 
-            name: "__main__".to_string(), 
-            kind: None, 
-            params: None, 
-            body: None 
-        }
+        return Function {
+            name: "__main__".to_string(),
+            kind: None,
+            params: None,
+            body: None,
+        };
     }
 }
 
