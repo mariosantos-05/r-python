@@ -82,6 +82,7 @@ fn expression(input: &str) -> IResult<&str, Expression> {
     alt((
         ok_expression,
         err_expression,
+        eval_iserror_expression,
         boolean_expression,
         comparison_expression,
         arithmetic_expression,
@@ -210,6 +211,18 @@ fn err_expression(input: &str) -> IResult<&str, Expression>{
     )(input)?;
 
     Ok((input,Expression::CErr(Box::new(expr))))
+}
+
+fn eval_iserror_expression(input: &str) -> IResult<&str, Expression>{
+    let (input, _) = tag("isError")(input)?;
+    let (input, _) = space0(input)?;
+    let (input,expr) = delimited(
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')')))
+    )(input)?;
+
+    Ok((input,Expression::IsError(Box::new(expr))))
 }
 
 // Parse boolean operations
@@ -926,4 +939,31 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(result, expected);
     }
+
+    #[test]
+    fn test_eval_iserror_err_expression() {
+        let input = "isError (Err (1))";
+        let (rest, result) = eval_iserror_expression(input).unwrap();
+        let expected = Expression::IsError(Box::new(Expression::CErr(Box::new(Expression::CInt(1)))));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected); 
+    }
+
+    #[test]
+    fn test_eval_iserror_ok_expression() {
+        let input = "isError (Ok (2))";
+        let (rest, result) = eval_iserror_expression(input).unwrap();
+        let expected = Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected); 
+    }
+
+    #[test]
+    fn test_eval_iserror_real() {
+        let input = "isError (3.14)";
+        let (rest, result) = eval_iserror_expression(input).unwrap();
+        let expected = Expression::IsError(Box::new(Expression::CReal(3.14)));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected); 
+    }        
 }
