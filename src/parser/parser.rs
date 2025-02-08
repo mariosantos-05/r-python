@@ -84,6 +84,7 @@ fn expression(input: &str) -> IResult<&str, Expression> {
         err_expression,
         unwrap_expression,
         eval_iserror_expression,
+        eval_isnothing_expression,
         boolean_expression,
         comparison_expression,
         arithmetic_expression,
@@ -225,6 +226,20 @@ fn err_expression(input: &str) -> IResult<&str, Expression>{
 
     Ok((input,Expression::CErr(Box::new(expr))))
 }
+
+fn eval_isnothing_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, _) = tag("isNothing")(input)?; 
+    let (input, _) = space0(input)?;
+
+    let (input, expr) = delimited(
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')')))
+    )(input)?;
+
+    Ok((input, Expression::IsNothing(Box::new(expr))))
+}
+
 
 fn eval_iserror_expression(input: &str) -> IResult<&str, Expression>{
     let (input, _) = tag("isError")(input)?;
@@ -994,5 +1009,33 @@ mod tests {
         let expected = Expression::IsError(Box::new(Expression::CReal(3.14)));
         assert_eq!(rest, "");
         assert_eq!(result, expected); 
+    }
+
+    #[test]
+    fn test_eval_isnothing_nothing_expression() {
+        let input = "isNothing(Nothing)";
+        let (rest, result) = eval_isnothing_expression(input).unwrap();
+        let expected = Expression::IsNothing(Box::new(Expression::CNothing));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected); 
+        //Necessita da implementação de definição de Nothing.
     }        
+
+    #[test]
+    fn test_eval_isnothing_ok_expression() {
+        let input = "isError (Ok (2))";
+        let (rest, result) = eval_iserror_expression(input).unwrap();
+        let expected = Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected); 
+    }
+
+    #[test]
+    fn test_eval_isnothing_real() {
+        let input = "isNothing (4.20)";
+        let (rest, result) = eval_isnothing_expression(input).unwrap();
+        let expected = Expression::IsNothing(Box::new(Expression::CReal(4.20)));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
 }
