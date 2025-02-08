@@ -13,6 +13,11 @@ pub mod ir;
 pub mod parser;
 pub mod tc;
 
+fn main() {
+    println!("Hello, world!");
+}
+
+/*
 fn run_test(name: &str, program: &str) -> String {
     let mut output = String::new();
     output.push_str(&format!("\n=== Running test: {} ===\n", name));
@@ -340,3 +345,4 @@ result4 = (x >= y) and (not False)"#;
     // Also print to console
     print!("{}", all_results);
 }
+ */

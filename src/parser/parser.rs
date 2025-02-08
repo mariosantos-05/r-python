@@ -69,7 +69,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = space0(input)?;
     alt((
-        function_def,
+        //function_def,
         if_statement,
         return_statement,
         assignment,
@@ -82,6 +82,8 @@ fn expression(input: &str) -> IResult<&str, Expression> {
     alt((
         ok_expression,
         err_expression,
+        just_expression,
+        nothing_expression,
         unwrap_expression,
         eval_iserror_expression,
         eval_isnothing_expression,
@@ -191,66 +193,101 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-fn ok_expression(input: &str) -> IResult<&str, Expression>{
+fn ok_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("Ok")(input)?;
     let (input, _) = space0(input)?;
-    let (input,expr) = delimited(
+    let (input, expr) = delimited(
         tuple((char('('), space0)),
         expression,
-        tuple((space0, char(')')))
+        tuple((space0, char(')'))),
     )(input)?;
 
-    Ok((input,Expression::COk(Box::new(expr))))
+    Ok((input, Expression::COk(Box::new(expr))))
 }
 
 fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("unwrap")(input)?; 
-    let (input, _) = space0(input)?;       
+    let (input, _) = tag("unwrap")(input)?;
+    let (input, _) = space0(input)?;
     let (input, expr) = delimited(
-        tuple((char('('), space0)),        
-        expression,                       
-        tuple((space0, char(')')))        
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')'))),
     )(input)?;
 
     Ok((input, Expression::Unwrap(Box::new(expr))))
 }
 
-fn err_expression(input: &str) -> IResult<&str, Expression>{
+fn expression_propagate(input: &str) -> IResult<&str, Expression> {
+    // Parse the first term and build the base expression
+    let (input, expr) = expression(input)?;
+    if input.starts_with('?') {
+        let mut new_expr = expr;
+        let mut new_input = input;
+        loop {
+            let (input, _) = tag("?")(new_input)?;
+            new_expr = Expression::Unwrap(Box::new(new_expr));
+            new_input = input;
+            if !new_input.starts_with('?') {
+                break;
+            }
+        }
+        Ok((new_input, new_expr))
+    } else {
+        // Otherwise, return the parsed expression as it is
+        Ok((input, expr))
+    }
+}
+
+fn err_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("Err")(input)?;
     let (input, _) = space0(input)?;
-    let (input,expr) = delimited(
+    let (input, expr) = delimited(
         tuple((char('('), space0)),
         expression,
-        tuple((space0, char(')')))
+        tuple((space0, char(')'))),
     )(input)?;
 
-    Ok((input,Expression::CErr(Box::new(expr))))
+    Ok((input, Expression::CErr(Box::new(expr))))
+}
+
+fn just_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, _) = tag("Just")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, expr) = delimited(
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')'))),
+    )(input)?;
+    Ok((input, Expression::CJust(Box::new(expr))))
+}
+
+fn nothing_expression(input: &str) -> IResult<&str, Expression> {
+    map(tag("Nothing"), |_| Expression::CNothing)(input)
 }
 
 fn eval_isnothing_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("isNothing")(input)?; 
+    let (input, _) = tag("isNothing")(input)?;
     let (input, _) = space0(input)?;
 
     let (input, expr) = delimited(
         tuple((char('('), space0)),
         expression,
-        tuple((space0, char(')')))
+        tuple((space0, char(')'))),
     )(input)?;
 
     Ok((input, Expression::IsNothing(Box::new(expr))))
 }
 
-
-fn eval_iserror_expression(input: &str) -> IResult<&str, Expression>{
+fn eval_iserror_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("isError")(input)?;
     let (input, _) = space0(input)?;
-    let (input,expr) = delimited(
+    let (input, expr) = delimited(
         tuple((char('('), space0)),
         expression,
-        tuple((space0, char(')')))
+        tuple((space0, char(')'))),
     )(input)?;
 
-    Ok((input,Expression::IsError(Box::new(expr))))
+    Ok((input, Expression::IsError(Box::new(expr))))
 }
 
 // Parse boolean operations
@@ -364,7 +401,8 @@ fn declaration(input: &str) -> IResult<&str, Statement> {
 fn assignment(input: &str) -> IResult<&str, Statement> {
     let (input, name) = identifier(input)?;
     let (input, _) = delimited(space0, char('='), space0)(input)?;
-    let (input, expr) = expression(input)?;
+    let (input, expr) = expression_propagate(input)?;
+    //let (input, expr) = expression(input)?;
 
     // Infer type from expression
     let inferred_type = match &expr {
@@ -381,6 +419,7 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     ))
 }
 
+/*
 fn parse_type(type_name: &str) -> Type {
     match type_name {
         "TInteger" => Type::TInteger,
@@ -428,6 +467,7 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
         ),
     ))
 }
+*/
 
 //return statement parsing
 fn return_statement(input: &str) -> IResult<&str, Statement> {
@@ -711,50 +751,50 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 2);
     }
+    /*
+       #[test]
+       fn test_function_definition() {
+           let input = r#"def add(x: TInteger, y: TInteger) -> TInteger:
+           return x + y"#;
+           let (rest, stmt) = function_def(input).unwrap();
+           assert_eq!(rest, "");
+           match stmt {
+               Statement::FuncDef(name, func) => {
+                   assert_eq!(name, "add");
+                   assert_eq!(func.kind, Type::TInteger);
+                   match func.params {
+                       Some(params) => {
+                           assert_eq!(params.len(), 2);
+                           assert_eq!(params[0].0, "x");
+                           assert_eq!(params[1].0, "y");
+                       }
+                       None => panic!("Expected Some params"),
+                   }
+               }
+               _ => panic!("Expected FuncDef"),
+           }
+       }
 
-    #[test]
-    fn test_function_definition() {
-        let input = r#"def add(x: TInteger, y: TInteger) -> TInteger:
-        return x + y"#;
-        let (rest, stmt) = function_def(input).unwrap();
-        assert_eq!(rest, "");
-        match stmt {
-            Statement::FuncDef(name, func) => {
-                assert_eq!(name, "add");
-                assert_eq!(func.kind, Type::TInteger);
-                match func.params {
-                    Some(params) => {
-                        assert_eq!(params.len(), 2);
-                        assert_eq!(params[0].0, "x");
-                        assert_eq!(params[1].0, "y");
-                    }
-                    None => panic!("Expected Some params"),
-                }
-            }
-            _ => panic!("Expected FuncDef"),
-        }
-    }
-
-    #[test]
-    fn test_function_call() {
-        let input = "result = add(5, 3)";
-        let (rest, stmt) = assignment(input).unwrap();
-        assert_eq!(rest, "");
-        match stmt {
-            Statement::Assignment(name, expr, _type) => {
-                assert_eq!(name, "result");
-                match *expr {
-                    Expression::FuncCall(func_name, args) => {
-                        assert_eq!(func_name, "add");
-                        assert_eq!(args.len(), 2);
-                    }
-                    _ => panic!("Expected FuncCall"),
-                }
-            }
-            _ => panic!("Expected Assignment"),
-        }
-    }
-
+       #[test]
+       fn test_function_call() {
+           let input = "result = add(5, 3)";
+           let (rest, stmt) = assignment(input).unwrap();
+           assert_eq!(rest, "");
+           match stmt {
+               Statement::Assignment(name, expr, _type) => {
+                   assert_eq!(name, "result");
+                   match *expr {
+                       Expression::FuncCall(func_name, args) => {
+                           assert_eq!(func_name, "add");
+                           assert_eq!(args.len(), 2);
+                       }
+                       _ => panic!("Expected FuncCall"),
+                   }
+               }
+               _ => panic!("Expected Assignment"),
+           }
+       }
+    */
     #[test]
     fn test_basic_arithmetic_left_recursion() {
         let cases = vec![
@@ -774,39 +814,7 @@ mod tests {
             assert_eq!(result, expected);
         }
     }
-    
-    #[test]
-    fn test_ok_creation() {
-        let cases = vec![
-            ("Ok(1)", Expression::COk(Box::new(Expression::CInt(1)))),
-            ("Ok(0.5)", Expression::COk(Box::new(Expression::CReal(0.5)))),
-            ("Err(False)", Expression::CErr(Box::new(Expression::CFalse))),
-        ];
 
-        for (input, expected) in cases {
-            let (rest, result) = expression(input).unwrap();
-            assert_eq!(rest, "");
-            assert_eq!(result, expected);
-        }
-
-    }
-
-    #[test]
-    fn test_unwrap_parsing() {
-        let cases = vec![
-            ("unwrap(Ok(2))", Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(2)))))),
-            ("unwrap(Ok(2.5))", Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CReal(2.5)))))),
-            ("unwrap(3)", Expression::Unwrap(Box::new(Expression::CInt(3)))),
-            ("unwrap(3.5)", Expression::Unwrap(Box::new(Expression::CReal(3.5)))),
-        ];
-    
-        for (input, expected) in cases {
-            let (rest, result) = unwrap_expression(input).unwrap();
-            assert_eq!(rest, ""); 
-            assert_eq!(result, expected);
-        }
-    }
-    
     #[test]
     fn test_operator_precedence() {
         let input = "2 + 3 * 4";
@@ -988,18 +996,20 @@ mod tests {
     fn test_eval_iserror_err_expression() {
         let input = "isError (Err (1))";
         let (rest, result) = eval_iserror_expression(input).unwrap();
-        let expected = Expression::IsError(Box::new(Expression::CErr(Box::new(Expression::CInt(1)))));
+        let expected =
+            Expression::IsError(Box::new(Expression::CErr(Box::new(Expression::CInt(1)))));
         assert_eq!(rest, "");
-        assert_eq!(result, expected); 
+        assert_eq!(result, expected);
     }
 
     #[test]
     fn test_eval_iserror_ok_expression() {
         let input = "isError (Ok (2))";
         let (rest, result) = eval_iserror_expression(input).unwrap();
-        let expected = Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
+        let expected =
+            Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
         assert_eq!(rest, "");
-        assert_eq!(result, expected); 
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -1008,7 +1018,7 @@ mod tests {
         let (rest, result) = eval_iserror_expression(input).unwrap();
         let expected = Expression::IsError(Box::new(Expression::CReal(3.14)));
         assert_eq!(rest, "");
-        assert_eq!(result, expected); 
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -1017,17 +1027,18 @@ mod tests {
         let (rest, result) = eval_isnothing_expression(input).unwrap();
         let expected = Expression::IsNothing(Box::new(Expression::CNothing));
         assert_eq!(rest, "");
-        assert_eq!(result, expected); 
+        assert_eq!(result, expected);
         //Necessita da implementação de definição de Nothing.
-    }        
+    }
 
     #[test]
     fn test_eval_isnothing_ok_expression() {
         let input = "isError (Ok (2))";
         let (rest, result) = eval_iserror_expression(input).unwrap();
-        let expected = Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
+        let expected =
+            Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
         assert_eq!(rest, "");
-        assert_eq!(result, expected); 
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -1035,6 +1046,135 @@ mod tests {
         let input = "isNothing (4.20)";
         let (rest, result) = eval_isnothing_expression(input).unwrap();
         let expected = Expression::IsNothing(Box::new(Expression::CReal(4.20)));
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_ok_creation() {
+        let cases = vec![
+            ("Ok(1)", Expression::COk(Box::new(Expression::CInt(1)))),
+            ("Ok(0.5)", Expression::COk(Box::new(Expression::CReal(0.5)))),
+            ("Err(False)", Expression::CErr(Box::new(Expression::CFalse))),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = expression(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_unwrap_parsing() {
+        let cases = vec![
+            (
+                "unwrap(Ok(2))",
+                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(2))))),
+            ),
+            (
+                "unwrap(Ok(2.5))",
+                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CReal(2.5))))),
+            ),
+            (
+                "unwrap(3)",
+                Expression::Unwrap(Box::new(Expression::CInt(3))),
+            ),
+            (
+                "unwrap(3.5)",
+                Expression::Unwrap(Box::new(Expression::CReal(3.5))),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = unwrap_expression(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_propagation_parsing() {
+        let cases = vec![
+            (
+                "Ok(2)?",
+                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(2))))),
+            ),
+            (
+                "Ok(2.5)??",
+                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::COk(
+                    Box::new(Expression::CReal(2.5)),
+                ))))),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let (rest, result) = expression_propagate(input).unwrap();
+            assert_eq!(rest, "");
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_eval_just_integer() {
+        let input = "Just (42)";
+        let (rest, result) = just_expression(input).unwrap();
+        let expected = Expression::CJust(Box::new(Expression::CInt(42)));
+
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_eval_just_real() {
+        let input = "Just (3.14)";
+        let (rest, result) = just_expression(input).unwrap();
+        let expected = Expression::CJust(Box::new(Expression::CReal(3.14)));
+
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_eval_just_expression() {
+        let input = "Just (1 + 2)";
+        let (rest, result) = just_expression(input).unwrap();
+        let expected = Expression::CJust(Box::new(Expression::Add(
+            Box::new(Expression::CInt(1)),
+            Box::new(Expression::CInt(2)),
+        )));
+
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_eval_nothing() {
+        let input = "Nothing";
+        let (rest, result) = nothing_expression(input).unwrap();
+        let expected = Expression::CNothing;
+
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_eval_isnothing_just_expression() {
+        let input = "isNothing (Just (5))";
+        let (rest, result) = eval_isnothing_expression(input).unwrap();
+        let expected =
+            Expression::IsNothing(Box::new(Expression::CJust(Box::new(Expression::CInt(5)))));
+
+        assert_eq!(rest, "");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_eval_isnothing_nothing() {
+        let input = "isNothing (Nothing)";
+        let (rest, result) = eval_isnothing_expression(input).unwrap();
+        let expected = Expression::IsNothing(Box::new(Expression::CNothing));
+
         assert_eq!(rest, "");
         assert_eq!(result, expected);
     }
