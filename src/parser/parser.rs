@@ -82,6 +82,7 @@ fn expression(input: &str) -> IResult<&str, Expression> {
     alt((
         ok_expression,
         err_expression,
+        unwrap_expression,
         eval_iserror_expression,
         boolean_expression,
         comparison_expression,
@@ -199,6 +200,18 @@ fn ok_expression(input: &str) -> IResult<&str, Expression>{
     )(input)?;
 
     Ok((input,Expression::COk(Box::new(expr))))
+}
+
+fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, _) = tag("unwrap")(input)?; 
+    let (input, _) = space0(input)?;       
+    let (input, expr) = delimited(
+        tuple((char('('), space0)),        
+        expression,                       
+        tuple((space0, char(')')))        
+    )(input)?;
+
+    Ok((input, Expression::Unwrap(Box::new(expr))))
 }
 
 fn err_expression(input: &str) -> IResult<&str, Expression>{
@@ -763,6 +776,22 @@ mod tests {
 
     }
 
+    #[test]
+    fn test_unwrap_parsing() {
+        let cases = vec![
+            ("unwrap(Ok(2))", Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(2)))))),
+            ("unwrap(Ok(2.5))", Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CReal(2.5)))))),
+            ("unwrap(3)", Expression::Unwrap(Box::new(Expression::CInt(3)))),
+            ("unwrap(3.5)", Expression::Unwrap(Box::new(Expression::CReal(3.5)))),
+        ];
+    
+        for (input, expected) in cases {
+            let (rest, result) = unwrap_expression(input).unwrap();
+            assert_eq!(rest, ""); 
+            assert_eq!(result, expected);
+        }
+    }
+    
     #[test]
     fn test_operator_precedence() {
         let input = "2 + 3 * 4";
