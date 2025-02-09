@@ -40,9 +40,9 @@ fn integer(input: &str) -> IResult<&str, Expression> {
 //term parser for arithmetic
 fn term(input: &str) -> ParseResult<Expression> {
     let (input, mut expr) = factor(input)?;
-    
+
     let (mut input, placeholder_exp) = propagate_operator(input)?;
-    expr = propagate_generate(expr.clone(),placeholder_exp.clone());
+    expr = propagate_generate(expr.clone(), placeholder_exp.clone());
 
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
@@ -55,7 +55,7 @@ fn term(input: &str) -> ParseResult<Expression> {
             Ok((new_input, op)) => {
                 let (newer_input, mut factor2) = factor(new_input)?;
                 let (newer_input, placeholder_exp) = propagate_operator(newer_input)?;
-                factor2 = propagate_generate(factor2.clone(),placeholder_exp.clone());
+                factor2 = propagate_generate(factor2.clone(), placeholder_exp.clone());
 
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
@@ -199,8 +199,6 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-
-
 fn propagate_operator(input: &str) -> IResult<&str, Expression> {
     let expr = Expression::CNothing; // Will be substituted on other parsing functions
     if input.starts_with('?') {
@@ -221,11 +219,11 @@ fn propagate_operator(input: &str) -> IResult<&str, Expression> {
     }
 }
 
-fn propagate_generate(exp : Expression, mut placeholder_exp : Expression) -> Expression {
-// Changes placeholder expression to real expression
+fn propagate_generate(exp: Expression, mut placeholder_exp: Expression) -> Expression {
+    // Changes placeholder expression to real expression
     let mut new_expr = exp;
     loop {
-        match placeholder_exp{
+        match placeholder_exp {
             Expression::Unwrap(boxed_expr) => {
                 new_expr = Expression::Unwrap(Box::new(new_expr));
                 placeholder_exp = *boxed_expr;
@@ -270,7 +268,6 @@ fn just_expression(input: &str) -> IResult<&str, Expression> {
     )(input)?;
     Ok((input, Expression::CJust(Box::new(expr))))
 }
-
 
 fn nothing_expression(input: &str) -> IResult<&str, Expression> {
     map(tag("Nothing"), |_| Expression::CNothing)(input)
@@ -348,8 +345,6 @@ fn just_boolean_factor(input: &str) -> IResult<&str, Expression> {
     Ok((input, Expression::CJust(Box::new(expr))))
 }
 
-
-
 // Parse boolean operations
 fn boolean_expression(input: &str) -> IResult<&str, Expression> {
     let (input, first) = boolean_term(input)?;
@@ -383,8 +378,8 @@ fn boolean_term(input: &str) -> IResult<&str, Expression> {
         boolean_factor,
     ))(input)?;
     let (input, placeholder_exp) = propagate_operator(input)?;
-    exp = propagate_generate(exp.clone(),placeholder_exp.clone());
-    return Ok((input,exp));
+    exp = propagate_generate(exp.clone(), placeholder_exp.clone());
+    return Ok((input, exp));
 }
 
 fn boolean_factor(input: &str) -> IResult<&str, Expression> {
@@ -446,8 +441,8 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
     ))(input)?;
 
     let (input, placeholder_exp) = propagate_operator(input)?;
-    condition = propagate_generate(condition.clone(),placeholder_exp.clone());
-    
+    condition = propagate_generate(condition.clone(), placeholder_exp.clone());
+
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
     let (input, then_block) = indented_block(input)?;
@@ -1187,28 +1182,53 @@ mod tests {
             ),
             (
                 "x??",
-                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from("x")
+                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::Var(
+                    String::from("x"),
                 ))))),
             ),
             (
                 "Ok(10.1 + 1.2)?",
-                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::Add(Box::new(Expression::CReal(10.1)),Box::new(Expression::CReal(1.2))))))),
+                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::Add(
+                    Box::new(Expression::CReal(10.1)),
+                    Box::new(Expression::CReal(1.2)),
+                ))))),
             ),
             (
                 "Ok(1)? + Just(2)?",
-                Expression::Add(Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(1)))))),Box::new(Expression::Unwrap(Box::new(Expression::CJust(Box::new(Expression::CInt(2)))))))
+                Expression::Add(
+                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                        Expression::CInt(1),
+                    ))))),
+                    Box::new(Expression::Unwrap(Box::new(Expression::CJust(Box::new(
+                        Expression::CInt(2),
+                    ))))),
+                ),
             ),
             (
                 "Ok(True)? and Ok(False)?",
-                Expression::And(Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CTrue))))),Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CFalse))))))
+                Expression::And(
+                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                        Expression::CTrue,
+                    ))))),
+                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                        Expression::CFalse,
+                    ))))),
+                ),
             ),
             (
                 "Ok(True or False)??",
-                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::Or(Box::new(Expression::CTrue),Box::new(Expression::CFalse)))))))),
-            ),       
+                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::COk(
+                    Box::new(Expression::Or(
+                        Box::new(Expression::CTrue),
+                        Box::new(Expression::CFalse),
+                    )),
+                ))))),
+            ),
             (
                 "Just(not False)?",
-                Expression::Unwrap(Box::new(Expression::CJust(Box::new(Expression::Not(Box::new(Expression::CFalse)))))),
+                Expression::Unwrap(Box::new(Expression::CJust(Box::new(Expression::Not(
+                    Box::new(Expression::CFalse),
+                ))))),
             ),
         ];
 
@@ -1218,19 +1238,45 @@ mod tests {
             assert_eq!(result, expected);
         }
     }
-    
+
     #[test]
     fn test_propagation_parsing_statements() {
         let input = "x = Ok(True)\nif unwrap(x):\n  y = 1\nif x?:\n  y = 1\n";
 
-        let (rest,result) = parse(input).unwrap();
+        let (rest, result) = parse(input).unwrap();
         assert_eq!(rest, "");
-        assert_eq!(result, [
-            Statement::Assignment(String::from("x"), Box::new(Expression::COk(Box::new(Expression::CTrue))), None), 
-            Statement::IfThenElse(Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from("x"))))), 
-            Box::new(Statement::Block(vec![Statement::Assignment(String::from("y"), Box::new(Expression::CInt(1)), Some(Type::TInteger))])), None), 
-            Statement::IfThenElse(Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from("x"))))), 
-            Box::new(Statement::Block(vec![Statement::Assignment(String::from("y"), Box::new(Expression::CInt(1)), Some(Type::TInteger))])), None)]);
+        assert_eq!(
+            result,
+            [
+                Statement::Assignment(
+                    String::from("x"),
+                    Box::new(Expression::COk(Box::new(Expression::CTrue))),
+                    None
+                ),
+                Statement::IfThenElse(
+                    Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from(
+                        "x"
+                    ))))),
+                    Box::new(Statement::Block(vec![Statement::Assignment(
+                        String::from("y"),
+                        Box::new(Expression::CInt(1)),
+                        Some(Type::TInteger)
+                    )])),
+                    None
+                ),
+                Statement::IfThenElse(
+                    Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from(
+                        "x"
+                    ))))),
+                    Box::new(Statement::Block(vec![Statement::Assignment(
+                        String::from("y"),
+                        Box::new(Expression::CInt(1)),
+                        Some(Type::TInteger)
+                    )])),
+                    None
+                )
+            ]
+        );
     }
 
     #[test]
