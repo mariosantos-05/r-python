@@ -3,7 +3,7 @@ use nom::{
     bytes::complete::{tag, take_while, take_while1},
     character::complete::{char, digit1, line_ending, space0, space1},
     combinator::{map, map_res, opt, recognize},
-    error::{Error, ErrorKind},
+    error::Error,
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -11,7 +11,7 @@ use nom::{
 
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 
-use crate::ir::ast::Function;
+//use crate::ir::ast::Function;
 use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 

@@ -609,8 +609,9 @@ fn eval_isnothing_expression(
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(Expression::CNothing) => Ok(EnvValue::Exp(Expression::CTrue)),
-        EnvValue::Exp(Expression::CJust(_)) => Ok(EnvValue::Exp(Expression::CFalse)),
-        _ => Err("Expression not recognized.".to_string()),
+        _ => Ok(EnvValue::Exp(Expression::CFalse)),
+        //EnvValue::Exp(Expression::CJust(_)) => Ok(EnvValue::Exp(Expression::CFalse)),
+        //_ => Err("Expression not recognized.".to_string()),
     }
 }
 
@@ -621,8 +622,9 @@ fn eval_iserror_expression(
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(Expression::CErr(_)) => Ok(EnvValue::Exp(Expression::CTrue)),
-        EnvValue::Exp(Expression::COk(_)) => Ok(EnvValue::Exp(Expression::CFalse)),
-        _ => Err(String::from("'is_error' is only defined for Ok and Err.")),
+        _ => Ok(EnvValue::Exp(Expression::CFalse)),
+        //EnvValue::Exp(Expression::COk(_)) => Ok(EnvValue::Exp(Expression::CFalse)),
+        //_ => Err(String::from("'is_error' is only defined for Ok and Err.")),
     }
 }
 
@@ -741,10 +743,12 @@ mod tests {
         let aux = CInt(2);
         let ie = IsError(Box::new(aux));
 
+        assert_eq!(eval(ie, &env), Ok(EnvValue::Exp(CFalse)));
+        /*
         assert_eq!(
             eval(ie, &env),
             Err(String::from("'is_error' is only defined for Ok and Err."))
-        );
+        ); */
     }
 
     #[test]
@@ -772,7 +776,9 @@ mod tests {
         let c420 = CInt(420);
         let u = IsNothing(Box::new(c420));
 
-        assert_eq!(eval(u, &env), Err("Expression not recognized.".to_string()));
+        assert_eq!(eval(u, &env), Ok(EnvValue::Exp(CFalse)));
+
+        //assert_eq!(eval(u, &env), Err("Expression not recognized.".to_string()));
     }
 
     #[test]

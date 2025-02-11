@@ -36,7 +36,7 @@ pub fn check_exp(exp: Expression, env: &Environment<Type>) -> Result<Type, Error
         Expression::Unwrap(e) => check_unwrap_type(*e, env),
         Expression::Propagate(e) => check_propagate_type(*e, env),
         Expression::FuncCall(name, args) => check_func_call(name, args, env),
-        _ => Err(String::from("not implemented yet")),
+        //_ => Err(String::from("not implemented yet")),
     }
 }
 
