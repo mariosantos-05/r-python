@@ -34,6 +34,7 @@ pub fn check_exp(exp: Expression, env: &Environment<Type>) -> Result<Type, Error
         Expression::IsError(e) => check_iserror_type(*e, env),
         Expression::IsNothing(e) => check_isnothing_type(*e, env),
         Expression::Unwrap(e) => check_unwrap_type(*e, env),
+        Expression::Propagate(e) => check_propagate_type(*e, env),
         Expression::FuncCall(name, args) => check_func_call(name, args, env),
         _ => Err(String::from("not implemented yet")),
     }
@@ -315,6 +316,18 @@ fn check_result_err(exp: Expression, env: &Environment<Type>) -> Result<Type, Er
 }
 
 fn check_unwrap_type(exp: Expression, env: &Environment<Type>) -> Result<Type, ErrorMessage> {
+    let exp_type = check_exp(exp, env)?;
+
+    match exp_type {
+        Type::TMaybe(t) => Ok(*t),
+        Type::TResult(tl, _) => Ok(*tl),
+        _ => Err(String::from(
+            "[Type Error] expecting a maybe or result type value.",
+        )),
+    }
+}
+
+fn check_propagate_type(exp: Expression, env: &Environment<Type>) -> Result<Type, ErrorMessage> {
     let exp_type = check_exp(exp, env)?;
 
     match exp_type {
@@ -613,6 +626,40 @@ mod tests {
         let bool = CTrue;
         let ok = COk(Box::new(bool));
         let u = Unwrap(Box::new(ok));
+
+        assert_eq!(check_exp(u, &env), Ok(TBool));
+    }
+
+    #[test]
+    fn check_propagate_maybe() {
+        let env = Environment::new();
+        let c5 = CInt(5);
+        let some = CJust(Box::new(c5));
+        let u = Propagate(Box::new(some));
+
+        assert_eq!(check_exp(u, &env), Ok(TInteger));
+    }
+
+    #[test]
+    fn check_propagate_maybe_type_error() {
+        let env = Environment::new();
+        let c5 = CInt(5);
+        let u = Propagate(Box::new(c5));
+
+        assert_eq!(
+            check_exp(u, &env),
+            Err(String::from(
+                "[Type Error] expecting a maybe or result type value."
+            ))
+        );
+    }
+
+    #[test]
+    fn check_propagate_result() {
+        let env = Environment::new();
+        let bool = CTrue;
+        let ok = COk(Box::new(bool));
+        let u = Propagate(Box::new(ok));
 
         assert_eq!(check_exp(u, &env), Ok(TBool));
     }

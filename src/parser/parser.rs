@@ -206,7 +206,7 @@ fn propagate_operator(input: &str) -> IResult<&str, Expression> {
         let mut new_input = input;
         loop {
             let (input, _) = tag("?")(new_input)?;
-            new_expr = Expression::Unwrap(Box::new(new_expr));
+            new_expr = Expression::Propagate(Box::new(new_expr));
             new_input = input;
             if !new_input.starts_with('?') {
                 break;
@@ -224,8 +224,8 @@ fn propagate_generate(exp: Expression, mut placeholder_exp: Expression) -> Expre
     let mut new_expr = exp;
     loop {
         match placeholder_exp {
-            Expression::Unwrap(boxed_expr) => {
-                new_expr = Expression::Unwrap(Box::new(new_expr));
+            Expression::Propagate(boxed_expr) => {
+                new_expr = Expression::Propagate(Box::new(new_expr));
                 placeholder_exp = *boxed_expr;
             }
             _ => break,
@@ -352,7 +352,6 @@ fn boolean_expression(input: &str) -> IResult<&str, Expression> {
         delimited(space0, alt((tag("and"), tag("or"))), space0),
         boolean_term,
     )))(input)?;
-    //println!("{},{:?}", input, rest);
 
     Ok((
         input,
@@ -482,7 +481,6 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     let (input, name) = identifier(input)?;
     let (input, _) = delimited(space0, char('='), space0)(input)?;
     let (input, expr) = expression(input)?;
-    //let (input, expr) = expression(input)?;
 
     // Infer type from expression
     let inferred_type = match &expr {
@@ -1112,11 +1110,11 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_isnothing_ok_expression() {
-        let input = "isError (Ok (2))";
-        let (rest, result) = iserror_expression(input).unwrap();
+    fn test_eval_isnothing_just_expression() {
+        let input = "isNothing (Just (2))";
+        let (rest, result) = isnothing_expression(input).unwrap();
         let expected =
-            Expression::IsError(Box::new(Expression::COk(Box::new(Expression::CInt(2)))));
+            Expression::IsNothing(Box::new(Expression::CJust(Box::new(Expression::CInt(2)))));
         assert_eq!(rest, "");
         assert_eq!(result, expected);
     }
@@ -1178,46 +1176,46 @@ mod tests {
         let cases = vec![
             (
                 "Ok(2)?",
-                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(2))))),
+                Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(2))))),
             ),
             (
                 "x??",
-                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::Var(
+                Expression::Propagate(Box::new(Expression::Propagate(Box::new(Expression::Var(
                     String::from("x"),
                 ))))),
             ),
             (
                 "Ok(10.1 + 1.2)?",
-                Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::Add(
+                Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::Add(
                     Box::new(Expression::CReal(10.1)),
                     Box::new(Expression::CReal(1.2)),
                 ))))),
             ),
             (
-                "Ok(1)? + Just(2)?",
-                Expression::Add(
-                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                "Ok(1)? / Just(2)?",
+                Expression::Div(
+                    Box::new(Expression::Propagate(Box::new(Expression::COk(Box::new(
                         Expression::CInt(1),
                     ))))),
-                    Box::new(Expression::Unwrap(Box::new(Expression::CJust(Box::new(
-                        Expression::CInt(2),
-                    ))))),
+                    Box::new(Expression::Propagate(Box::new(Expression::CJust(
+                        Box::new(Expression::CInt(2)),
+                    )))),
                 ),
             ),
             (
                 "Ok(True)? and Ok(False)?",
                 Expression::And(
-                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                    Box::new(Expression::Propagate(Box::new(Expression::COk(Box::new(
                         Expression::CTrue,
                     ))))),
-                    Box::new(Expression::Unwrap(Box::new(Expression::COk(Box::new(
+                    Box::new(Expression::Propagate(Box::new(Expression::COk(Box::new(
                         Expression::CFalse,
                     ))))),
                 ),
             ),
             (
                 "Ok(True or False)??",
-                Expression::Unwrap(Box::new(Expression::Unwrap(Box::new(Expression::COk(
+                Expression::Propagate(Box::new(Expression::Propagate(Box::new(Expression::COk(
                     Box::new(Expression::Or(
                         Box::new(Expression::CTrue),
                         Box::new(Expression::CFalse),
@@ -1226,7 +1224,7 @@ mod tests {
             ),
             (
                 "Just(not False)?",
-                Expression::Unwrap(Box::new(Expression::CJust(Box::new(Expression::Not(
+                Expression::Propagate(Box::new(Expression::CJust(Box::new(Expression::Not(
                     Box::new(Expression::CFalse),
                 ))))),
             ),
@@ -1265,9 +1263,9 @@ mod tests {
                     None
                 ),
                 Statement::IfThenElse(
-                    Box::new(Expression::Unwrap(Box::new(Expression::Var(String::from(
-                        "x"
-                    ))))),
+                    Box::new(Expression::Propagate(Box::new(Expression::Var(
+                        String::from("x")
+                    )))),
                     Box::new(Statement::Block(vec![Statement::Assignment(
                         String::from("y"),
                         Box::new(Expression::CInt(1)),
@@ -1317,17 +1315,6 @@ mod tests {
         let input = "Nothing";
         let (rest, result) = nothing_expression(input).unwrap();
         let expected = Expression::CNothing;
-
-        assert_eq!(rest, "");
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_eval_isnothing_just_expression() {
-        let input = "isNothing (Just (5))";
-        let (rest, result) = isnothing_expression(input).unwrap();
-        let expected =
-            Expression::IsNothing(Box::new(Expression::CJust(Box::new(Expression::CInt(5)))));
 
         assert_eq!(rest, "");
         assert_eq!(result, expected);

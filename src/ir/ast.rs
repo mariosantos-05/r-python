@@ -169,7 +169,7 @@ pub enum Expression {
     Unwrap(Box<Expression>),
     IsError(Box<Expression>),
     IsNothing(Box<Expression>),
-    //Propagate(Box<Expression>), // Changed into a more developed statement when going through transformations.rs
+    Propagate(Box<Expression>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

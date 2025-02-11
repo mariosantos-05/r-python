@@ -32,6 +32,7 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
         Expression::CErr(e) => eval_err(*e, env),
         Expression::CJust(e) => eval_just(*e, env),
         Expression::Unwrap(e) => eval_unwrap_expression(*e, env),
+        Expression::Propagate(e) => eval_propagate_expression(*e, env),
         Expression::IsError(e) => eval_iserror_expression(*e, env),
         Expression::IsNothing(e) => eval_isnothing_expression(*e, env),
         Expression::FuncCall(name, args) => call(name, args, env),
@@ -210,7 +211,7 @@ fn check_error_propagation(
     // Checks Expressions that propagate error (if expression is on match, it'll propagate error (true), otherwise (false),
     //  error will be ignored). The error message will be contained in the Option<ControlFlow> in case error propagates
     match exp {
-        Expression::Unwrap(_) => propagate_error(exp, &env),
+        Expression::Propagate(_) => propagate_error(exp, &env),
         _ => Ok((false, None)),
     }
 }
@@ -221,38 +222,34 @@ fn propagate_error(
 ) -> Result<(bool, Option<ControlFlow>), ErrorMessage> {
     // Checks error value and propagates it (terminates code if on highest level function)
     match eval(exp, &env) {
-        Ok(value) => {
-            println!("{:?}", value);
-            match value {
-                EnvValue::Exp(Expression::CErr(new_exp)) => {
-                    if env.scope_key().1 == 0 {
-                        match eval(*new_exp, &env) {
-                            Ok(EnvValue::Exp(new_value)) => {
-                                match extract_error_value(new_value, &env) {
-                                    Ok(s) => Err(String::from(format!(
-                                        "Program terminated with errors: {}",
-                                        s
-                                    ))),
-                                    _ => Err("Program terminated with errors".to_string()),
-                                }
-                            }
-                            _ => {
-                                Err("Program panicked and trying to terminate with errors"
-                                    .to_string())
+        Ok(value) => match value {
+            EnvValue::Exp(Expression::CErr(new_exp)) => {
+                if env.scope_key().1 == 0 {
+                    match eval(*new_exp, &env) {
+                        Ok(EnvValue::Exp(new_value)) => {
+                            match extract_error_value(new_value, &env) {
+                                Ok(s) => Err(String::from(format!(
+                                    "Program terminated with errors: {}",
+                                    s
+                                ))),
+                                _ => Err("Program terminated with errors".to_string()),
                             }
                         }
-                    } else {
-                        Ok((
-                            true,
-                            Some(ControlFlow::Return(EnvValue::Exp(Expression::CErr(
-                                new_exp,
-                            )))),
-                        ))
+                        _ => {
+                            Err("Program panicked and trying to terminate with errors".to_string())
+                        }
                     }
+                } else {
+                    Ok((
+                        true,
+                        Some(ControlFlow::Return(EnvValue::Exp(Expression::CErr(
+                            new_exp,
+                        )))),
+                    ))
                 }
-                _ => Ok((false, None)),
             }
-        }
+            _ => Ok((false, None)),
+        },
         Err(err) => Err(err),
     }
 }
@@ -585,11 +582,23 @@ fn eval_unwrap_expression(
     match v {
         EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
         EnvValue::Exp(Expression::COk(e)) => Ok(EnvValue::Exp(*e)),
+        _ => Err(String::from("Program panicked trying to unwrap.")),
+    }
+}
+
+fn eval_propagate_expression(
+    exp: Expression,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
+    let v = eval(exp, env)?;
+    match v {
+        EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
+        EnvValue::Exp(Expression::COk(e)) => Ok(EnvValue::Exp(*e)),
         EnvValue::Exp(Expression::CErr(e)) => Ok(EnvValue::Exp(Expression::CErr(e))),
         EnvValue::Exp(Expression::CNothing) => Ok(EnvValue::Exp(Expression::CErr(Box::new(
             Expression::CString("Couldn't unwrap Nothing".to_string()),
         )))),
-        _ => Err(String::from("'unwrap' is expects a Just or Ok.")),
+        _ => Err(String::from("'propagate' is expects a Just or Ok.")),
     }
 }
 
@@ -679,7 +688,10 @@ mod tests {
         let err = CErr(Box::new(c1));
         let u = Unwrap(Box::new(err));
 
-        assert_eq!(eval(u, &env), Ok(EnvValue::Exp(CErr(Box::new(CInt(1))))));
+        match eval(u, &env) {
+            Err(_) => assert!(true),
+            _ => assert!(false, "The program was suposed to terminate"),
+        }
     }
 
     #[test]
@@ -697,12 +709,10 @@ mod tests {
         let env: Environment<EnvValue> = Environment::new();
         let u = Unwrap(Box::new(CNothing));
 
-        assert_eq!(
-            eval(u, &env),
-            Ok(EnvValue::Exp(CErr(Box::new(CString(
-                "Couldn't unwrap Nothing".to_string()
-            )))))
-        );
+        match eval(u, &env) {
+            Err(_) => assert!(true),
+            _ => assert!(false, "The program was suposed to terminate"),
+        }
     }
 
     #[test]
@@ -1414,7 +1424,7 @@ mod tests {
          * Test for an unwrap check alongside with errors
          *
          * > x = Err(1)
-         * > x = Unwrap(x)
+         * > x = x?
          *
          * After executing, program should be terminated
          */
@@ -1428,7 +1438,7 @@ mod tests {
 
         let unwrap_stmt = Assignment(
             String::from("x"),
-            Box::new(Unwrap(Box::new(Var(String::from("x"))))),
+            Box::new(Propagate(Box::new(Var(String::from("x"))))),
             Some(TInteger),
         );
 
@@ -1449,9 +1459,9 @@ mod tests {
          * Test for an unwrap check alongside with errors
          *
          * > x = Ok(true)
-         * > if unwrap(x):
+         * > if x?:
          * >    x = Err("Oops")
-         * >    if unwrap(x):
+         * >    if x?:
          * >        y = 1
          * After executing, program should be terminated
          */
@@ -1463,7 +1473,7 @@ mod tests {
             Some(TResult(Box::new(TBool), Box::new(TAny))),
         );
 
-        let unwrap_cond_2 = Unwrap(Box::new(Var(String::from("x"))));
+        let unwrap_cond_2 = Propagate(Box::new(Var(String::from("x"))));
         let then_unwrap_cond_2 = Assignment(
             String::from("y"),
             Box::new(COk(Box::new(CInt(1)))),
@@ -1471,7 +1481,7 @@ mod tests {
         );
         let if_stmt_2 = IfThenElse(Box::new(unwrap_cond_2), Box::new(then_unwrap_cond_2), None);
 
-        let unwrap_cond_1 = Unwrap(Box::new(Var(String::from("x"))));
+        let unwrap_cond_1 = Propagate(Box::new(Var(String::from("x"))));
         let then_unwrap_cond_1 = Sequence(
             Box::new(Assignment(
                 String::from("x"),
@@ -1493,27 +1503,17 @@ mod tests {
     #[test]
     fn eval_unwrap_error_propagation_while() {
         /*
-         *
-         *
-         * > x = Ok(true)
-         * > while unwrap(x):
-         * >    x = Err("Oops")
-         * >    y = 1
-         * After executing, program should be terminated
-         */
-
-        /*
          * Test for an unwrap check alongside with errors
          *
          * > x = Ok(true)
          * > y = 0
-         * > while unwrap(x):
+         * > while x?:
          * >   y = y + 1
          * >   if y > 10:
          * >      x = Ok(false)
          * > x = Ok(true)
          * > z = 10
-         * > while unwrap(x):
+         * > while x?:
          * >   z = z - 1
          * >   if z < 0:
          * >      x = Err("ErrorMsg")
@@ -1565,7 +1565,7 @@ mod tests {
         let seq6 = Sequence(Box::new(a6), Box::new(if_stmt_2));
 
         let while_statement_2 = While(
-            Box::new(Unwrap(Box::new(Var(String::from("x"))))),
+            Box::new(Propagate(Box::new(Var(String::from("x"))))),
             Box::new(seq6),
         );
 
@@ -1575,7 +1575,7 @@ mod tests {
         let seq3 = Sequence(Box::new(a3), Box::new(if_stmt_1));
 
         let while_statement_1 = While(
-            Box::new(Unwrap(Box::new(Var(String::from("x"))))),
+            Box::new(Propagate(Box::new(Var(String::from("x"))))),
             Box::new(seq3),
         );
 
@@ -1710,7 +1710,7 @@ mod tests {
          * >    if n <= 2:
          * >        return COk(n - 1)
          * >
-         * >    return Ok(Unwrap(fibonacci(n - 1)) + Uunrap(fibonacci(n - 2)))
+         * >    return Ok(fibonacci(n - 1)? + fibonacci(n - 2)?)
          * >
          * > fib: TInteger = fibonacci(10)
          *
@@ -1747,11 +1747,11 @@ mod tests {
                             None,
                         )),
                         Box::new(Return(Box::new(COk(Box::new(Add(
-                            Box::new(Unwrap(Box::new(FuncCall(
+                            Box::new(Propagate(Box::new(FuncCall(
                                 "fibonacci".to_string(),
                                 vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(1)))],
                             )))),
-                            Box::new(Unwrap(Box::new(FuncCall(
+                            Box::new(Propagate(Box::new(FuncCall(
                                 "fibonacci".to_string(),
                                 vec![Sub(Box::new(Var("n".to_string())), Box::new(CInt(2)))],
                             )))),
@@ -1765,7 +1765,7 @@ mod tests {
             Box::new(func),
             Box::new(Assignment(
                 "fib".to_string(),
-                Box::new(Unwrap(Box::new(FuncCall(
+                Box::new(Propagate(Box::new(FuncCall(
                     "fibonacci".to_string(),
                     vec![CInt(-1)],
                 )))),
@@ -1846,8 +1846,10 @@ mod tests {
          *
          * > x: TInteger = 10
          * > if x > 5:
-         * >   y = 2
-         * >   x = x + y
+         * >   y = Ok(1)
+         * >   x = y?
+         * >   y = Err("Test Error Message")
+         * >   x = y?
          * > else:
          * >   y: TInteger = 0
          *
@@ -1864,7 +1866,7 @@ mod tests {
         );
         let then_stmt_2 = Assignment(
             String::from("x"),
-            Box::new(Unwrap(Box::new(Var(String::from("y"))))),
+            Box::new(Propagate(Box::new(Var(String::from("y"))))),
             Some(TInteger),
         );
         let then_stmt_3 = Assignment(
@@ -1874,7 +1876,7 @@ mod tests {
         );
         let then_stmt_4 = Assignment(
             String::from("x"),
-            Box::new(Unwrap(Box::new(Var(String::from("y"))))),
+            Box::new(Propagate(Box::new(Var(String::from("y"))))),
             Some(TInteger),
         );
 
