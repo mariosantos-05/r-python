@@ -1,13 +1,13 @@
 //use crate::ir::ast::Expression;
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
-/*use crate::interpreter::interpreter::{execute, ControlFlow};
-use crate::ir::ast::{Statement, Type};
-use crate::parser::parser::parse;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-*/
+//use crate::interpreter::interpreter::{execute, ControlFlow};
+//use crate::ir::ast::{Statement, Type};
+//use crate::parser::parser::parse;
+//use std::collections::HashMap;
+//use std::fs::File;
+//use std::io::Write;
+
 pub mod interpreter;
 pub mod ir;
 pub mod parser;

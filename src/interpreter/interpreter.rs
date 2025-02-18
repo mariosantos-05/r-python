@@ -46,12 +46,14 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
 
     match stmt {
         Statement::Assignment(name, exp, _) => {
-            let propagate = check_error_propagation(*exp.clone(), &new_env)?;
-            if propagate.0 {
-                return Ok(propagate.1.unwrap());
-            }
+            //// Pra todos os outros casos (statements)
+            let propagate = check_error_propagation(*exp.clone(), &new_env)?;         //// Tirar
+            if propagate.0 {                                                          //// Tirar  
+                return Ok(propagate.1.unwrap());                                      //// Tirar
+            }                                     //// Tirar
 
             let value = eval(*exp, &new_env)?;
+            //// pegar o valor do errorHandling e checar se tá true no .0, se tiver, fazer um return Ok(propagate(.1))
             new_env.insert_variable(name, value);
             return Ok(ControlFlow::Continue(new_env));
         }
@@ -204,6 +206,7 @@ fn extract_error_value(
     }
 }
 
+//// Tirar
 fn check_error_propagation(
     exp: Expression,
     env: &Environment<EnvValue>,
@@ -216,15 +219,19 @@ fn check_error_propagation(
     }
 }
 
+
 fn propagate_error(
     exp: Expression,
     env: &Environment<EnvValue>,
-) -> Result<(bool, Option<ControlFlow>), ErrorMessage> {
+) -> Result<(bool, Option<ControlFlow>), ErrorMessage> {       //// retorna o ControlFlow
     // Checks error value and propagates it (terminates code if on highest level function)
     match eval(exp, &env) {
-        Ok(value) => match value {
-            EnvValue::Exp(Expression::CErr(new_exp)) => {
-                if env.scope_key().1 == 0 {
+        Ok(value) => match value {                                     //// Tirar
+            EnvValue::Exp(Expression::CErr(new_exp)) => {                                     //// Tirar
+
+
+            //// Fica (alterar valor de retorno)
+                if env.scope_key().1 == 0 {           ////  // Checa se ta na main 
                     match eval(*new_exp, &env) {
                         Ok(EnvValue::Exp(new_value)) => {
                             match extract_error_value(new_value, &env) {
@@ -248,10 +255,12 @@ fn propagate_error(
                     ))
                 }
             }
+
+           //// Tirar
             _ => Ok((false, None)),
-        },
-        Err(err) => Err(err),
-    }
+        },                                     //// Tirar
+        Err(err) => Err(err),                                     //// Tirar
+    }                                      //// Tirar
 }
 
 fn is_constant(exp: Expression) -> bool {
@@ -292,6 +301,7 @@ where
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
+    //// checar aqui se o status de erro é vdd, se for, retornar o valor de erro "Ok(EnvValue::Exp(Cerr q tem no env))"   --> fzr teste
     match (v1, v2) {
         (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => Ok(
             EnvValue::Exp(Expression::CInt(op(v1 as f64, v2 as f64) as i32)),
@@ -378,6 +388,7 @@ where
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
+    //// checar aqui se o status de erro é vdd, se for, retornar o valor de erro "Ok(EnvValue::Exp(Cerr q tem no env))"   --> fzr teste
     match (v1, v2) {
         (EnvValue::Exp(Expression::CTrue), EnvValue::Exp(Expression::CTrue)) => {
             Ok(EnvValue::Exp(op(true, true)))
@@ -457,6 +468,7 @@ where
 {
     let v1 = eval(lhs, env)?;
     let v2 = eval(rhs, env)?;
+    //// checar aqui se o status de erro é vdd, se for, retornar o valor de erro "Ok(EnvValue::Exp(Cerr q tem no env))"   --> fzr teste
     match (v1, v2) {
         (EnvValue::Exp(Expression::CInt(v1)), EnvValue::Exp(Expression::CInt(v2))) => {
             Ok(EnvValue::Exp(op(v1 as f64, v2 as f64)))
@@ -578,6 +590,7 @@ fn eval_unwrap_expression(
     exp: Expression,
     env: &Environment<EnvValue>,
 ) -> Result<EnvValue, ErrorMessage> {
+    ////QUATRO/ FAz uteste também
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
@@ -586,16 +599,18 @@ fn eval_unwrap_expression(
     }
 }
 
+
 fn eval_propagate_expression(
     exp: Expression,
     env: &Environment<EnvValue>,
 ) -> Result<EnvValue, ErrorMessage> {
+    ////QUATRO Fazer teste com recursão pls :D
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
         EnvValue::Exp(Expression::COk(e)) => Ok(EnvValue::Exp(*e)),
-        EnvValue::Exp(Expression::CErr(e)) => Ok(EnvValue::Exp(Expression::CErr(e))),
-        EnvValue::Exp(Expression::CNothing) => Ok(EnvValue::Exp(Expression::CErr(Box::new(
+        EnvValue::Exp(Expression::CErr(e)) => Ok(EnvValue::Exp(Expression::CErr(e))),  //// Gerar erro, guardar no errorHandling, e setar pra True
+        EnvValue::Exp(Expression::CNothing) => Ok(EnvValue::Exp(Expression::CErr(Box::new( //// Gerar erro, guardar no errorHandling, e setar pra True
             Expression::CString("Couldn't unwrap Nothing".to_string()),
         )))),
         _ => Err(String::from("'propagate' is expects a Just or Ok.")),

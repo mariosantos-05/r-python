@@ -27,6 +27,7 @@ pub struct Environment<A> {
     pub scope: Function,
     pub recursion: i32,
     pub stack: HashMap<(Name, i32), Frame<A>>,
+    //// pub de tupla (errStatus : bool, erro em si : Option<cerr>)           errorHandling
 }
 
 impl<A> Environment<A> {
@@ -38,9 +39,11 @@ impl<A> Environment<A> {
             scope,
             recursion: 0,
             stack: HashMap::from([(("__main__".to_string(), 0), frame)]),
+            //// (false, None)
         };
     }
 
+    //// adicionar funcao pra pegar a tupla do errorHandling
     pub fn scope_key(&self) -> (Name, i32) {
         return (self.scope_name(), self.recursion);
     }
@@ -112,7 +115,7 @@ impl Function {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,

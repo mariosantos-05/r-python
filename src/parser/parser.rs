@@ -11,13 +11,14 @@ use nom::{
 
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 
-//use crate::ir::ast::Function;
+use crate::ir::ast::Function;
 use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 
 // Parse identifier
 fn identifier(input: &str) -> IResult<&str, Name> {
     let (input, id) = take_while1(|c: char| c.is_alphanumeric() || c == '_')(input)?;
+    //// checar se o id é keyword ? Retorna erro : continua normal
     Ok((input, id.to_string()))
 }
 
@@ -39,10 +40,7 @@ fn integer(input: &str) -> IResult<&str, Expression> {
 
 //term parser for arithmetic
 fn term(input: &str) -> ParseResult<Expression> {
-    let (input, mut expr) = factor(input)?;
-
-    let (mut input, placeholder_exp) = propagate_operator(input)?;
-    expr = propagate_generate(expr.clone(), placeholder_exp.clone());
+    let (mut input, mut expr) = factor(input)?;               //// mudar de factor pra boolean_term (nome novo)
 
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
@@ -53,9 +51,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 
         match op_result {
             Ok((new_input, op)) => {
-                let (newer_input, mut factor2) = factor(new_input)?;
-                let (newer_input, placeholder_exp) = propagate_operator(newer_input)?;
-                factor2 = propagate_generate(factor2.clone(), placeholder_exp.clone());
+                let (newer_input, factor2) = factor(new_input)?;               //// mudar de factor pra boolean_term (nome novo)
 
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
@@ -75,7 +71,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = space0(input)?;
     alt((
-        //function_def,
+        function_def,
         if_statement,
         return_statement,
         assignment,
@@ -199,6 +195,8 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
+//// Modificar pra ficar como o Ok, Unwrap etc. try_unwrap(); em tese, ele irá no parser de expressions
+/*
 fn propagate_operator(input: &str) -> IResult<&str, Expression> {
     let expr = Expression::CNothing; // Will be substituted on other parsing functions
     if input.starts_with('?') {
@@ -218,21 +216,7 @@ fn propagate_operator(input: &str) -> IResult<&str, Expression> {
         Ok((input, expr))
     }
 }
-
-fn propagate_generate(exp: Expression, mut placeholder_exp: Expression) -> Expression {
-    // Changes placeholder expression to real expression
-    let mut new_expr = exp;
-    loop {
-        match placeholder_exp {
-            Expression::Propagate(boxed_expr) => {
-                new_expr = Expression::Propagate(Box::new(new_expr));
-                placeholder_exp = *boxed_expr;
-            }
-            _ => break,
-        }
-    }
-    return new_expr;
-}
+*/
 
 fn ok_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("Ok")(input)?;
@@ -310,44 +294,9 @@ fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
     Ok((input, Expression::Unwrap(Box::new(expr))))
 }
 
-fn ok_boolean_factor(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("Ok")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, expr) = delimited(
-        tuple((char('('), space0)),
-        boolean_factor,
-        tuple((space0, char(')'))),
-    )(input)?;
-
-    Ok((input, Expression::COk(Box::new(expr))))
-}
-
-fn err_boolean_factor(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("Err")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, expr) = delimited(
-        tuple((char('('), space0)),
-        boolean_factor,
-        tuple((space0, char(')'))),
-    )(input)?;
-
-    Ok((input, Expression::CErr(Box::new(expr))))
-}
-
-fn just_boolean_factor(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("Just")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, expr) = delimited(
-        tuple((char('('), space0)),
-        boolean_factor,
-        tuple((space0, char(')'))),
-    )(input)?;
-    Ok((input, Expression::CJust(Box::new(expr))))
-}
-
 // Parse boolean operations
 fn boolean_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, first) = boolean_term(input)?;
+    let (input, first) = boolean_term(input)?;                                 //// Alterar parser: usar o term normal
     let (input, rest) = many0(tuple((
         delimited(space0, alt((tag("and"), tag("or"))), space0),
         boolean_term,
@@ -363,24 +312,18 @@ fn boolean_expression(input: &str) -> IResult<&str, Expression> {
     ))
 }
 
+//// Mudar nome disso daqui pra chamar no term
 fn boolean_term(input: &str) -> IResult<&str, Expression> {
-    let (input, mut exp) = alt((
-        map(preceded(tag("not "), boolean_factor), |expr| {
+    let (input, exp) = alt((
+        map(preceded(tag("not "), boolean_factor), |expr| {            //// chamar factor
             Expression::Not(Box::new(expr))
         }),
-        ok_boolean_factor,
-        err_boolean_factor,
-        just_boolean_factor,
-        unwrap_expression,
-        iserror_expression,
-        isnothing_expression,
-        boolean_factor,
+        boolean_factor,                                                 //// chamar factor
     ))(input)?;
-    let (input, placeholder_exp) = propagate_operator(input)?;
-    exp = propagate_generate(exp.clone(), placeholder_exp.clone());
     return Ok((input, exp));
 }
 
+//// Tirar esse cara
 fn boolean_factor(input: &str) -> IResult<&str, Expression> {
     alt((
         boolean,
@@ -400,6 +343,9 @@ fn factor(input: &str) -> IResult<&str, Expression> {
             arithmetic_expression,
             tuple((space0, char(')'))),
         ),
+        //// boolean
+        //// comparison_expression
+        //// Delimited boolean_expression
         ok_expression,
         err_expression,
         just_expression,
@@ -418,6 +364,7 @@ fn factor(input: &str) -> IResult<&str, Expression> {
 }
 
 //indented block parser
+//// Se quiser tentar melhorar isso daki, pq nn ta funcionando if dentro de if. Sera q pode ser isso?
 fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = line_ending(input)?;
     let (input, statements) = separated_list1(
@@ -433,14 +380,11 @@ fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
 fn if_statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = tag("if")(input)?;
     let (input, _) = space1(input)?;
-    let (input, mut condition) = alt((
+    let (input, condition) = alt((
         boolean_expression,
         comparison_expression,
         map(identifier, Expression::Var),
     ))(input)?;
-
-    let (input, placeholder_exp) = propagate_operator(input)?;
-    condition = propagate_generate(condition.clone(), placeholder_exp.clone());
 
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
@@ -497,7 +441,7 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     ))
 }
 
-/*
+
 fn parse_type(type_name: &str) -> Type {
     match type_name {
         "TInteger" => Type::TInteger,
@@ -511,7 +455,7 @@ fn parse_type(type_name: &str) -> Type {
 fn function_def(input: &str) -> IResult<&str, Statement> {
     let (input, _) = tag("def")(input)?;
     let (input, _) = space1(input)?;
-    let (input, name) = identifier(input)?;
+    let (input, id) = identifier(input)?;
     let (input, _) = char('(')(input)?;
     let (input, params) = separated_list0(
         delimited(space0, char(','), space0),
@@ -531,21 +475,21 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
     Ok((
         input,
         Statement::FuncDef(
-            name,
             Function {
-                kind: parse_type(&return_type),
+                name: id,
+                kind: Some(parse_type(&return_type)),
                 params: Some(
                     params
                         .into_iter()
                         .map(|(name, type_name)| (name, parse_type(&type_name)))
                         .collect(),
                 ),
-                body: Box::new(Statement::Block(body)),
+                body: Some(Box::new(Statement::Block(body))),
             },
         ),
     ))
 }
-*/
+
 
 //return statement parsing
 fn return_statement(input: &str) -> IResult<&str, Statement> {
@@ -829,50 +773,51 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 2);
     }
-    /*
-       #[test]
-       fn test_function_definition() {
-           let input = r#"def add(x: TInteger, y: TInteger) -> TInteger:
-           return x + y"#;
-           let (rest, stmt) = function_def(input).unwrap();
-           assert_eq!(rest, "");
-           match stmt {
-               Statement::FuncDef(name, func) => {
-                   assert_eq!(name, "add");
-                   assert_eq!(func.kind, Type::TInteger);
-                   match func.params {
-                       Some(params) => {
-                           assert_eq!(params.len(), 2);
-                           assert_eq!(params[0].0, "x");
-                           assert_eq!(params[1].0, "y");
-                       }
-                       None => panic!("Expected Some params"),
-                   }
-               }
-               _ => panic!("Expected FuncDef"),
-           }
-       }
 
-       #[test]
-       fn test_function_call() {
-           let input = "result = add(5, 3)";
-           let (rest, stmt) = assignment(input).unwrap();
-           assert_eq!(rest, "");
-           match stmt {
-               Statement::Assignment(name, expr, _type) => {
-                   assert_eq!(name, "result");
-                   match *expr {
-                       Expression::FuncCall(func_name, args) => {
-                           assert_eq!(func_name, "add");
-                           assert_eq!(args.len(), 2);
-                       }
-                       _ => panic!("Expected FuncCall"),
-                   }
-               }
-               _ => panic!("Expected Assignment"),
-           }
-       }
-    */
+    #[test]
+    fn test_function_definition() {
+        let input = r#"def add(x: TInteger, y: TInteger) -> TInteger:
+        return x + y"#;
+        let (rest, stmt) = function_def(input).unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Statement::FuncDef(func) => {
+                assert_eq!(func.name, "add");
+                assert_eq!(func.kind, Some(Type::TInteger));
+                match func.params {
+                    Some(params) => {
+                        assert_eq!(params.len(), 2);
+                        assert_eq!(params[0].0, "x");
+                        assert_eq!(params[1].0, "y");
+                    }
+                    None => panic!("Expected Some params"),
+                }
+                assert_eq!(func.body, Some(Box::new(Statement::Block(vec![Statement::Return(Box::new(Expression::Add(Box::new(Expression::Var("x".to_string())),Box::new(Expression::Var("y".to_string())))))]))));
+            }
+            _ => panic!("Expected FuncDef"),
+        }
+    }
+
+    #[test]
+    fn test_function_call() {
+        let input = "result = add(5, 3)";
+        let (rest, stmt) = assignment(input).unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Statement::Assignment(name, expr, _type) => {
+                assert_eq!(name, "result");
+                match *expr {
+                    Expression::FuncCall(func_name, args) => {
+                        assert_eq!(func_name, "add");
+                        assert_eq!(args.len(), 2);
+                    }
+                    _ => panic!("Expected FuncCall"),
+                }
+            }
+            _ => panic!("Expected Assignment"),
+        }
+    }
+
     #[test]
     fn test_basic_arithmetic_left_recursion() {
         let cases = vec![
