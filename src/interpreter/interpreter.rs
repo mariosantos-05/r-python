@@ -47,7 +47,6 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
     let result = match stmt {
         Statement::Assignment(name, exp, _) => {
             let value = eval(*exp, &new_env)?;
-            //// pegar o valor do errorHandling e checar se tá true no .0, se tiver, fazer um return Ok(propagate(.1))
             new_env.insert_variable(name, value);
             return Ok(ControlFlow::Continue(new_env));
         }
@@ -176,7 +175,6 @@ fn call(
 
 /* Error propagation functions:
     -> extract_error_value
-    -> check_error_propagation
     -> propagate_error
 */
 fn extract_error_value(
@@ -201,10 +199,9 @@ fn extract_error_value(
 fn propagate_error(
     exp: Expression,
     env: &Environment<EnvValue>,
-) -> Result<ControlFlow, ErrorMessage> {       //// retorna o ControlFlow
+) -> Result<ControlFlow, ErrorMessage> {       
     // Checks error value and propagates it (terminates code if on highest level function)
-    //// Fica (alterar valor de retorno)
-        if env.scope_key().1 == 0 {           ////  // Checa se ta na main 
+        if env.scope_key().1 == 0 {           
             match eval(exp, &env) {
                 Ok(EnvValue::Exp(new_value)) => {
                     match extract_error_value(new_value, &env) {
@@ -223,7 +220,7 @@ fn propagate_error(
             return Ok(ControlFlow::Return(EnvValue::Exp(Expression::CErr(Box::new(exp)))))
             
         }
-                                          //// Tirar
+
 }
 
 fn is_constant(exp: Expression) -> bool {
