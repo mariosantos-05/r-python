@@ -28,6 +28,7 @@ pub fn check_exp(exp: Expression, env: &Environment<Type>) -> Result<Type, Error
         Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::Var(name) => check_var_name(name, env, false),
         Expression::FuncCall(name, args) => check_func_call(name, args, env),
+        Expression::ADTConstructor(adt_name,constructor_name,args ) => check_adt_constructor(adt_name,constructor_name, args, env),
     }
 }
 
@@ -155,6 +156,12 @@ pub fn check_stmt(stmt: Statement, env: &Environment<Type>) -> Result<ControlFlo
                 Err(format!("[Syntax Error] return statement outside function."))
             }
         }
+
+        Statement::ADTDeclaration(name, constructors) => {
+            new_env.insert_type(name.clone(), constructors.clone());
+            Ok(ControlFlow::Continue(new_env))
+        }
+        
         _ => Err(String::from("not implemented yet.")),
     }
 }
@@ -190,6 +197,60 @@ fn check_func_call(
             env.scope_name(),
             name
         )),
+    }
+}
+
+fn check_adt_constructor(
+    adt_name: Name,          // Name of the ADT
+    constructor_name: Name,  // Name of the constructor
+    args: Vec<Box<Expression>>,
+    env: &Environment<Type>,
+) -> Result<Type, ErrorMessage> {
+    // Retrieve the ADT definition from the environment
+    if let Some(constructors) = env.get_type(&adt_name) {
+        // Find the correct constructor by name
+        if let Some(constructor) = constructors.iter().find(|c| c.name == constructor_name) {
+            // Check if the number of arguments matches the expected number
+            if args.len() != constructor.types.len() {
+                return Err(format!(
+                    "[Type Error in '{}'] ADT constructor '{}' expected {} arguments, found {}.",
+                    env.scope_name(),
+                    constructor_name,
+                    constructor.types.len(),
+                    args.len()
+                ));
+            }
+
+            // Check if the arguments match the expected constructor types
+            for (arg, expected_type) in args.iter().zip(&constructor.types) {
+                let arg_type = check_exp(*arg.clone(), env)?;
+                if arg_type != *expected_type {
+                    return Err(format!(
+                        "[Type Error in '{}'] ADT constructor '{}' has mismatched argument types: expected '{:?}', found '{:?}'.",
+                        env.scope_name(),
+                        constructor_name,
+                        expected_type,
+                        arg_type
+                    ));
+                }
+            }
+
+            // Return the ADT type
+            Ok(Type::Tadt(adt_name.clone(), constructors.clone()))
+        } else {
+            Err(format!(
+                "[Type Error in '{}'] ADT constructor '{}' not found in ADT '{}'.",
+                env.scope_name(),
+                constructor_name,
+                adt_name
+            ))
+        }
+    } else {
+        Err(format!(
+            "[Type Error in '{}'] ADT '{}' is not defined.",
+            env.scope_name(),
+            adt_name
+        ))
     }
 }
 

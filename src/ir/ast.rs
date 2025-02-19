@@ -26,6 +26,7 @@ pub struct Environment<A> {
     pub scope: Function,
     pub recursion: i32,
     pub stack: HashMap<(Name, i32), Frame<A>>,
+    pub type_env: HashMap<Name, Vec<ValueConstructor>>,
 }
 
 impl<A> Environment<A> {
@@ -37,6 +38,7 @@ impl<A> Environment<A> {
             scope,
             recursion: 0,
             stack: HashMap::from([(("__main__".to_string(), 0), frame)]),
+            type_env: HashMap::new(),
         };
     }
 
@@ -90,6 +92,16 @@ impl<A> Environment<A> {
             frame.variables.insert(name, kind);
         }
     }
+
+    pub fn insert_type(&mut self, name:Name, constructors: Vec<ValueConstructor>){
+        self.type_env.insert(name, constructors);
+    }
+
+    pub fn get_type(&self, name: &Name) -> Option<&Vec<ValueConstructor>> {
+        self.type_env.get(name)
+    }
+
+
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -120,6 +132,13 @@ pub enum Type {
     TFunction(Box<Option<Type>>, Vec<Type>),
     TList(Box<Type>),
     TTuple(Vec<Type>),
+    Tadt(Name, Vec<ValueConstructor>),
+}
+
+#[derive(Debug,PartialEq, Clone)]
+pub struct  ValueConstructor{
+    pub name: Name,
+    pub types: Vec<Type> 
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -154,6 +173,9 @@ pub enum Expression {
     LT(Box<Expression>, Box<Expression>),
     GTE(Box<Expression>, Box<Expression>),
     LTE(Box<Expression>, Box<Expression>),
+
+     /* ADT Constructor */
+    ADTConstructor(Name, Name, Vec<Box<Expression>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -166,4 +188,6 @@ pub enum Statement {
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Function),
     Return(Box<Expression>),
+    ADTDeclaration(Name, Vec<ValueConstructor>),
+    
 }

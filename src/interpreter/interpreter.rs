@@ -29,8 +29,57 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
         Expression::FuncCall(name, args) => call(name, args, env),
+        Expression::ADTConstructor(adt_name,constructor_name,args ) => adtconstructor_eval(adt_name,constructor_name, args, env),
         _ if is_constant(exp.clone()) => Ok(EnvValue::Exp(exp)),
         _ => Err(String::from("Not implemented yet.")),
+    }
+}
+
+
+fn adtconstructor_eval(
+    adt_name: Name,
+    constructor_name: Name,
+    args: Vec<Box<Expression>>,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, String> {
+
+    if let Some(constructors) = env.get_type(&adt_name) {
+        
+        let value_constructor = constructors.iter().find(|vc| vc.name == constructor_name);
+
+        if let Some(vc) = value_constructor {
+
+            if vc.types.len() != args.len() {
+                return Err(format!(
+                    "Error: Constructor {} expects {} arguments, but received {}",
+                    constructor_name,
+                    vc.types.len(),
+                    args.len()
+                ));
+            }
+
+
+            let evaluated_args: Result<Vec<Box<Expression>>, String> = args
+                .into_iter()
+                .map(|arg| {
+                    eval(*arg, env).map(|res| match res {
+                        EnvValue::Exp(e) => Box::new(e),
+                        _ => panic!("Error: Expected expression in ADT constructor arguments"),
+                    })
+                })
+                .collect();
+
+            evaluated_args.map(|evaluated| {
+                EnvValue::Exp(Expression::ADTConstructor(adt_name, constructor_name, evaluated))
+            })
+        } else {
+            Err(format!(
+                "Error: Constructor {} not found in ADT {}",
+                constructor_name, adt_name
+            ))
+        }
+    } else {
+        Err(format!("Error: ADT {} not found", adt_name))
     }
 }
 
@@ -89,6 +138,13 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
         Statement::Return(exp) => {
             let exp_value = eval(*exp, &new_env)?;
             Ok(ControlFlow::Return(exp_value))
+        }
+        
+        Statement::ADTDeclaration(name, constructors) => {
+            // Insert the ADT into the new environment
+            new_env.insert_type(name, constructors);
+            // Return the new environment along with ControlFlow
+            Ok(ControlFlow::Continue(new_env))
         }
         _ => Err(String::from("not implemented yet")),
     }
@@ -447,11 +503,14 @@ fn lte(
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Function;
     use crate::ir::ast::Statement::*;
     use crate::ir::ast::Type::*;
+    use crate::ir::ast::{Environment,Expression, Statement,Type, ValueConstructor};
     use approx::relative_eq;
 
     #[test]
@@ -1029,4 +1088,113 @@ mod tests {
             Err(s) => assert!(false, "{}", s),
         }
     }
+    
+    #[test]
+    fn test_adt_declaration() {
+        // Declare the environment
+        let env: Environment<EnvValue> = Environment::new();
+    
+        // Declare the Maybe ADT
+        let maybe_adt = Statement::ADTDeclaration(
+            "Maybe".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Just".to_string(),
+                    types: vec![Type::TInteger],
+                },
+                ValueConstructor {
+                    name: "Nothing".to_string(),
+                    types: vec![],
+                },
+            ],
+        );
+    
+        // Execute the ADT declaration and get the new environment
+        let result = execute(maybe_adt, &env);
+        assert!(result.is_ok());
+    
+        // Extract the new environment from ControlFlow::Continue
+        if let Ok(ControlFlow::Continue(new_env)) = result {
+            // Check if the ADT is correctly inserted into the new environment
+            let maybe_type = new_env.get_type(&"Maybe".to_string());
+            assert!(maybe_type.is_some());
+    
+            // Verify the constructors
+            let constructors = maybe_type.unwrap();
+            println!("Constructors: {:?}", constructors);
+            assert_eq!(constructors.len(), 2);
+            assert_eq!(constructors[0].name, "Just");
+            assert_eq!(constructors[1].name, "Nothing");
+
+        } else {
+            panic!("Expected ControlFlow::Continue");
+        }
+    }
+
+    #[test]
+    fn test_complex_adt() {
+    // Declare the environment
+    let env: Environment<EnvValue> = Environment::new();
+
+    // Declare the Shape ADT
+    let shape_adt = Statement::ADTDeclaration(
+        "Shape".to_string(),
+        vec![
+            ValueConstructor {
+                name: "Circle".to_string(),
+                types: vec![Type::TReal], // One parameter: radius
+            },
+            ValueConstructor {
+                name: "Rectangle".to_string(),
+                types: vec![Type::TReal, Type::TReal], // Two parameters: width and height
+            },
+            ValueConstructor {
+                name: "Triangle".to_string(),
+                types: vec![Type::TReal, Type::TReal, Type::TReal], // Three parameters: sides
+            },
+        ],
+    );
+
+    // Execute the ADT declaration and get the new environment
+    let result = execute(shape_adt, &env);
+    assert!(result.is_ok());
+
+    // Extract the new environment from ControlFlow::Continue
+    if let Ok(ControlFlow::Continue(new_env)) = result {
+        // Check if the ADT is correctly inserted into the new environment
+        let shape_type = new_env.get_type(&"Shape".to_string());
+        assert!(shape_type.is_some());
+
+        // Print the entire ADT for debugging
+        let constructors = shape_type.unwrap();
+        println!("ADT: Shape");
+        for constructor in constructors {
+            println!(
+                "  - Constructor: {}, Types: {:?}",
+                constructor.name, constructor.types
+            );
+        }
+
+        // Verify the constructors
+        assert_eq!(constructors.len(), 3);
+
+        // Verify Circle constructor
+        assert_eq!(constructors[0].name, "Circle");
+        assert_eq!(constructors[0].types, vec![Type::TReal]);
+
+        // Verify Rectangle constructor
+        assert_eq!(constructors[1].name, "Rectangle");
+        assert_eq!(constructors[1].types, vec![Type::TReal, Type::TReal]);
+
+        // Verify Triangle constructor
+        assert_eq!(constructors[2].name, "Triangle");
+        assert_eq!(
+            constructors[2].types,
+            vec![Type::TReal, Type::TReal, Type::TReal]
+        );
+    } else {
+        panic!("Expected ControlFlow::Continue");
+    }
+}
+
 }
