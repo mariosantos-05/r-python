@@ -10,15 +10,26 @@ use nom::{
 };
 
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
+const KEYWORDS: &[&str] = &[
+    "if", "else", "def", "while", "val", "var", "return", "Ok", 
+    "Err", "Just", "Nothing", "unwrap", "isNothing", "isError", 
+    "and", "or", "not", "True", "False"
+    ];
 
 use crate::ir::ast::Function;
 use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 
-// Parse identifier
 fn identifier(input: &str) -> IResult<&str, Name> {
     let (input, id) = take_while1(|c: char| c.is_alphanumeric() || c == '_')(input)?;
-    //// checar se o id é keyword ? Retorna erro : continua normal
+
+    if KEYWORDS.contains(&id) {
+        return Err(nom::Err::Error(Error {
+            input,
+            code: nom::error::ErrorKind::Tag,
+        }));
+    }
+
     Ok((input, id.to_string()))
 }
 
@@ -1274,4 +1285,65 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(result, expected);
     }
+
+    #[test]
+    fn test_create_function_with_keyword_if() {
+        let input = "def if(x: TInteger) -> TInteger:\n    return x";
+        let result = function_def(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+
+    #[test]
+    fn test_create_function_with_keyword_while() {
+        let input = "def while(x: TInteger) -> TInteger:\n    return x";
+        let result = function_def(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+
+    #[test]
+    fn test_create_function_with_keyword_Ok() {
+        let input = "def Ok(x: TInteger) -> TInteger:\n    return x";
+        let result = function_def(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+
+    #[test]
+    fn test_declaration_with_keyword_if() {
+        let input = "if = 10";
+        let result = assignment(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+
+    #[test]
+    fn test_declaration_with_keyword_while() {
+        let input = "while = 10";
+        let result = assignment(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+
+    #[test]
+    fn test_declaration_with_keyword_Ok() {
+        let input = "Ok = 10";
+        let result = assignment(input);
+    
+        assert!(
+            result.is_err()
+        );
+    }
+    
 }
