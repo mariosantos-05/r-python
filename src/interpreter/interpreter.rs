@@ -37,7 +37,7 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
         Expression::IsNothing(e) => eval_isnothing_expression(*e, env),
         Expression::FuncCall(name, args) => call(name, args, env),
         _ if is_constant(exp.clone()) => Ok(EnvValue::Exp(exp)),
-        _ => Err((String::from("Not implemented yet."),None)),
+        _ => Err((String::from("Not implemented yet."), None)),
     }
 }
 
@@ -66,7 +66,7 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
                     },
                     None => Ok(ControlFlow::Continue(new_env)),
                 },
-                _ => Err(("Condition must evaluate to a boolean".to_string(),None)),
+                _ => Err(("Condition must evaluate to a boolean".to_string(), None)),
             }
         }
 
@@ -80,7 +80,7 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
                     EnvValue::Exp(Expression::CTrue) => match execute(*stmt.clone(), &new_env)? {
                         ControlFlow::Continue(control_env) => {
                             new_env = control_env;
-                            
+
                             value = eval(*cond.clone(), &new_env)?;
                         }
                         ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
@@ -109,16 +109,15 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
             let exp_value = eval(*exp, &new_env)?;
             Ok(ControlFlow::Return(exp_value))
         }
-        _ => Err((String::from("not implemented yet"),None)),
+        _ => Err((String::from("not implemented yet"), None)),
     };
 
-    match result{
+    match result {
         Ok(v) => Ok(v),
-        Err((s,opt)) => {
-            if s != "Propagate".to_string(){
-                return Err((s,None));
-            }
-            else{
+        Err((s, opt)) => {
+            if s != "Propagate".to_string() {
+                return Err((s, None));
+            } else {
                 return propagate_error(opt.unwrap(), env);
             }
         }
@@ -192,35 +191,34 @@ fn extract_error_value(
         Expression::CReal(value) => Ok(value.to_string()),
         Expression::CString(value) => Ok(value.to_string()),
         Expression::CNothing => Ok("Nothing".to_string()),
-        _ => Err((String::from("Nothing to extract from."),None)),
+        _ => Err((String::from("Nothing to extract from."), None)),
     }
 }
 
 fn propagate_error(
     exp: Expression,
     env: &Environment<EnvValue>,
-) -> Result<ControlFlow, ErrorMessage> {       
+) -> Result<ControlFlow, ErrorMessage> {
     // Checks error value and propagates it (terminates code if on highest level function)
-        if env.scope_key().1 == 0 {           
-            match eval(exp, &env) {
-                Ok(EnvValue::Exp(new_value)) => {
-                    match extract_error_value(new_value, &env) {
-                        Ok(s) => Err((String::from(format!(
-                            "Program terminated with errors: {}",
-                            s
-                        )),None)),
-                        _ => Err(("Program terminated with errors".to_string(),None)),
-                    }
-                }
-                _ => {
-                    Err(("Program panicked and trying to terminate with errors".to_string(),None))
-                }
-            }
-        } else {  
-            return Ok(ControlFlow::Return(EnvValue::Exp(Expression::CErr(Box::new(exp)))))
-            
+    if env.scope_key().1 == 0 {
+        match eval(exp, &env) {
+            Ok(EnvValue::Exp(new_value)) => match extract_error_value(new_value, &env) {
+                Ok(s) => Err((
+                    String::from(format!("Program terminated with errors: {}", s)),
+                    None,
+                )),
+                _ => Err(("Program terminated with errors".to_string(), None)),
+            },
+            _ => Err((
+                "Program panicked and trying to terminate with errors".to_string(),
+                None,
+            )),
         }
-
+    } else {
+        return Ok(ControlFlow::Return(EnvValue::Exp(Expression::CErr(
+            Box::new(exp),
+        ))));
+    }
 }
 
 fn is_constant(exp: Expression) -> bool {
@@ -275,7 +273,7 @@ where
         (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
             Ok(EnvValue::Exp(Expression::CReal(op(v1, v2))))
         }
-        _ => Err((error_msg.to_string(),None)),
+        _ => Err((error_msg.to_string(), None)),
     }
 }
 
@@ -362,7 +360,7 @@ where
         (EnvValue::Exp(Expression::CFalse), EnvValue::Exp(Expression::CFalse)) => {
             Ok(EnvValue::Exp(op(false, false)))
         }
-        _ => Err((error_msg.to_string(),None)),
+        _ => Err((error_msg.to_string(), None)),
     }
 }
 
@@ -411,7 +409,7 @@ fn not(lhs: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMe
     match v {
         EnvValue::Exp(Expression::CTrue) => Ok(EnvValue::Exp(Expression::CFalse)),
         EnvValue::Exp(Expression::CFalse) => Ok(EnvValue::Exp(Expression::CTrue)),
-        _ => Err((String::from("'not' is only defined for booleans."),None)),
+        _ => Err((String::from("'not' is only defined for booleans."), None)),
     }
 }
 
@@ -442,7 +440,7 @@ where
         (EnvValue::Exp(Expression::CReal(v1)), EnvValue::Exp(Expression::CReal(v2))) => {
             Ok(EnvValue::Exp(op(v1, v2)))
         }
-        _ => Err((error_msg.to_string(),None)),
+        _ => Err((error_msg.to_string(), None)),
     }
 }
 
@@ -555,10 +553,9 @@ fn eval_unwrap_expression(
     match v {
         EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
         EnvValue::Exp(Expression::COk(e)) => Ok(EnvValue::Exp(*e)),
-        _ => Err((String::from("Program panicked trying to unwrap."),None)),
+        _ => Err((String::from("Program panicked trying to unwrap."), None)),
     }
 }
-
 
 fn eval_propagate_expression(
     exp: Expression,
@@ -570,10 +567,11 @@ fn eval_propagate_expression(
     match v {
         EnvValue::Exp(Expression::CJust(e)) => Ok(EnvValue::Exp(*e)),
         EnvValue::Exp(Expression::COk(e)) => Ok(EnvValue::Exp(*e)),
-        EnvValue::Exp(Expression::CErr(e)) => Err(("Propagate".to_string(), Some(*e))),  
-        EnvValue::Exp(Expression::CNothing) => Err(("Propagate".to_string(), 
-        Some(Expression::CString("Couldn't unwrap Nothing".to_string())),
-    )),
+        EnvValue::Exp(Expression::CErr(e)) => Err(("Propagate".to_string(), Some(*e))),
+        EnvValue::Exp(Expression::CNothing) => Err((
+            "Propagate".to_string(),
+            Some(Expression::CString("Couldn't unwrap Nothing".to_string())),
+        )),
         _ => Err((String::from("'propagate' is expects a Just or Ok."), None)),
     }
 }
@@ -608,7 +606,7 @@ fn eval_just(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, E
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(e) => Ok(EnvValue::Exp(Expression::CJust(Box::new(e)))),
-        _ => Err(("Expression not recognized.".to_string(),None)),
+        _ => Err(("Expression not recognized.".to_string(), None)),
     }
 }
 
@@ -616,7 +614,7 @@ fn eval_ok(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Err
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(e) => Ok(EnvValue::Exp(Expression::COk(Box::new(e)))),
-        _ => Err(("Expression not recognized.".to_string(),None)),
+        _ => Err(("Expression not recognized.".to_string(), None)),
     }
 }
 
@@ -624,7 +622,7 @@ fn eval_err(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
     let v = eval(exp, env)?;
     match v {
         EnvValue::Exp(e) => Ok(EnvValue::Exp(Expression::CErr(Box::new(e)))),
-        _ => Err(("Expression not recognized.".to_string(),None)),
+        _ => Err(("Expression not recognized.".to_string(), None)),
     }
 }
 
@@ -1429,7 +1427,10 @@ mod tests {
         match execute(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                ("Program terminated with errors: Test error message".to_string(), None)
+                (
+                    "Program terminated with errors: Test error message".to_string(),
+                    None
+                )
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
@@ -1477,7 +1478,10 @@ mod tests {
         let program = Sequence(Box::new(setup_stmt), Box::new(if_stmt_1));
 
         match execute(program, &env) {
-            Err(s) => assert_eq!(s, ("Program terminated with errors: Oops".to_string(), None)),
+            Err(s) => assert_eq!(
+                s,
+                ("Program terminated with errors: Oops".to_string(), None)
+            ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
     }
@@ -1569,7 +1573,10 @@ mod tests {
         match execute(program, &env) {
             Ok(ControlFlow::Continue(_)) => assert!(false),
             Ok(ControlFlow::Return(_)) => assert!(false),
-            Err(s) => assert_eq!(s, ("Program terminated with errors: ErrorMsg".to_string(), None)),
+            Err(s) => assert_eq!(
+                s,
+                ("Program terminated with errors: ErrorMsg".to_string(), None)
+            ),
         }
     }
 
@@ -1758,7 +1765,10 @@ mod tests {
         match execute(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                ("Program terminated with errors: Expected a positive number".to_string(),None)
+                (
+                    "Program terminated with errors: Expected a positive number".to_string(),
+                    None
+                )
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
@@ -1881,17 +1891,23 @@ mod tests {
         match execute(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                ("Program terminated with errors: Test Error Message".to_string(), None)
+                (
+                    "Program terminated with errors: Test Error Message".to_string(),
+                    None
+                )
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
     }
-    
+
     #[test]
     fn test_recursive_propagate_equal() {
         let env: Environment<EnvValue> = Environment::new();
 
-        let equal_expr = Propagate(Box::new(Expression::CJust(Box::new(Expression::EQ(Box::new(Expression::CInt(5)), Box::new(Expression::CInt(5)))))));
+        let equal_expr = Propagate(Box::new(Expression::CJust(Box::new(Expression::EQ(
+            Box::new(Expression::CInt(5)),
+            Box::new(Expression::CInt(5)),
+        )))));
         let unwrap_expr = Expression::Unwrap(Box::new(Expression::COk(Box::new(equal_expr))));
 
         let result = eval(unwrap_expr, &env);
@@ -1899,37 +1915,39 @@ mod tests {
     }
 
     #[test]
-    fn test_recursive_propagate_boolean(){
-        let env:Environment<EnvValue> = Environment::new();
-        
-        let just_expr = Expression::Propagate(Box::new(Expression::CJust(Box::new(Expression::CTrue))));
+    fn test_recursive_propagate_boolean() {
+        let env: Environment<EnvValue> = Environment::new();
+
+        let just_expr =
+            Expression::Propagate(Box::new(Expression::CJust(Box::new(Expression::CTrue))));
         let and_expr = Expression::And(Box::new(Expression::CTrue), Box::new(just_expr));
         let unwrap_expr = Expression::Unwrap(Box::new(Expression::COk(Box::new(and_expr))));
-        
+
         let result = eval(unwrap_expr, &env);
         assert_eq!(result, Ok(EnvValue::Exp(Expression::CTrue)));
     }
-     
+
     #[test]
-    fn test_recursive_propagate_int(){
-        let env:Environment<EnvValue> = Environment::new();
-        
-        let inner_propagate = Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(1)))));
+    fn test_recursive_propagate_int() {
+        let env: Environment<EnvValue> = Environment::new();
+
+        let inner_propagate =
+            Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(1)))));
         let add_expr = Expression::Add(Box::new(Expression::CInt(2)), Box::new(inner_propagate));
         let outer_expr = Expression::Propagate(Box::new(Expression::COk(Box::new(add_expr))));
-        
+
         let result = eval(outer_expr, &env);
         assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(3))));
     }
 
     #[test]
-    fn test_recursive_unwrap(){
+    fn test_recursive_unwrap() {
         let env: Environment<EnvValue> = Environment::new();
-        
+
         let base_expr = Expression::COk(Box::new(Expression::CInt(1)));
         let propagate_1 = Expression::Unwrap(Box::new(Expression::COk(Box::new(base_expr))));
         let propagate_2 = Expression::Unwrap(Box::new(Expression::COk(Box::new(propagate_1))));
-        
+
         let result = eval_propagate_expression(propagate_2, &env);
         assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(1))));
     }
@@ -1939,12 +1957,14 @@ mod tests {
         let env: Environment<EnvValue> = Environment::new();
 
         let base_expr = Expression::COk(Box::new(Expression::CInt(1)));
-        let propagate_1 = Expression::Propagate(Box::new(Expression::COk(Box::new(COk(Box::new(base_expr))))));
-        let propagate_2 = Expression::Propagate(Box::new(Expression::Propagate(Box::new(propagate_1))));
-        
+        let propagate_1 = Expression::Propagate(Box::new(Expression::COk(Box::new(COk(
+            Box::new(base_expr),
+        )))));
+        let propagate_2 =
+            Expression::Propagate(Box::new(Expression::Propagate(Box::new(propagate_1))));
+
         let result = eval(propagate_2, &env);
         assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(1))));
-
     }
 
     #[test]
@@ -1953,8 +1973,14 @@ mod tests {
         let exp = CErr(Box::new(CString("error".to_string())));
 
         let result = eval_propagate_expression(exp, &env);
-        assert_eq!(result, Err(("Propagate".to_string(), Some(Expression::CString("error".to_string())))));
-        }
+        assert_eq!(
+            result,
+            Err((
+                "Propagate".to_string(),
+                Some(Expression::CString("error".to_string()))
+            ))
+        );
+    }
 
     #[test]
     fn test_propagate_nothing() {
@@ -1962,7 +1988,12 @@ mod tests {
         let exp = Expression::CNothing;
 
         let result = eval_propagate_expression(exp, &env);
-        assert_eq!(result, Err(("Propagate".to_string(), Some(Expression::CString("Couldn't unwrap Nothing".to_string()))))
+        assert_eq!(
+            result,
+            Err((
+                "Propagate".to_string(),
+                Some(Expression::CString("Couldn't unwrap Nothing".to_string()))
+            ))
         );
     }
 
@@ -1972,7 +2003,9 @@ mod tests {
         let exp = Expression::CInt(100);
 
         let result = eval_propagate_expression(exp, &env);
-        assert_eq!(result, Err((String::from("'propagate' is expects a Just or Ok."), None)));
+        assert_eq!(
+            result,
+            Err((String::from("'propagate' is expects a Just or Ok."), None))
+        );
     }
 }
-

@@ -11,10 +11,27 @@ use nom::{
 
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 const KEYWORDS: &[&str] = &[
-    "if", "else", "def", "while", "val", "var", "return", "Ok", 
-    "Err", "Just", "Nothing", "unwrap", "tryUnwrap", "isNothing", "isError", 
-    "and", "or", "not", "True", "False"
-    ];
+    "if",
+    "else",
+    "def",
+    "while",
+    "val",
+    "var",
+    "return",
+    "Ok",
+    "Err",
+    "Just",
+    "Nothing",
+    "unwrap",
+    "tryUnwrap",
+    "isNothing",
+    "isError",
+    "and",
+    "or",
+    "not",
+    "True",
+    "False",
+];
 
 use crate::ir::ast::Function;
 use crate::ir::ast::Type;
@@ -51,7 +68,7 @@ fn integer(input: &str) -> IResult<&str, Expression> {
 
 //term parser for arithmetic
 fn term(input: &str) -> ParseResult<Expression> {
-    let (mut input, mut expr) = factor(input)?;               //// mudar de factor pra boolean_term (nome novo)
+    let (mut input, mut expr) = factor(input)?;
 
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
@@ -62,7 +79,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 
         match op_result {
             Ok((new_input, op)) => {
-                let (newer_input, factor2) = factor(new_input)?;               //// mudar de factor pra boolean_term (nome novo)
+                let (newer_input, factor2) = factor(new_input)?;
 
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
@@ -150,8 +167,8 @@ fn comparison_expression(input: &str) -> IResult<&str, Expression> {
 
 // Parse expressions with operator precedence
 fn arithmetic_expression(input: &str) -> ParseResult<Expression> {
-    let (mut input, mut expr) = term(input)?;  
-    
+    let (mut input, mut expr) = term(input)?;
+
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
             space0::<&str, Error<&str>>,
@@ -362,9 +379,7 @@ fn factor(input: &str) -> IResult<&str, Expression> {
     ))(input)
 }
 
-
 //indented block parser
-//// Se quiser tentar melhorar isso daki, pq nn ta funcionando if dentro de if. Sera q pode ser isso?
 fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = line_ending(input)?;
     let (input, statements) = separated_list1(
@@ -385,8 +400,6 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
         boolean_expression,
         map(identifier, Expression::Var),
     ))(input)?;
-
-
 
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
@@ -443,7 +456,6 @@ fn assignment(input: &str) -> IResult<&str, Statement> {
     ))
 }
 
-
 fn parse_type(type_name: &str) -> Type {
     match type_name {
         "TInteger" => Type::TInteger,
@@ -476,22 +488,19 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
 
     Ok((
         input,
-        Statement::FuncDef(
-            Function {
-                name: id,
-                kind: Some(parse_type(&return_type)),
-                params: Some(
-                    params
-                        .into_iter()
-                        .map(|(name, type_name)| (name, parse_type(&type_name)))
-                        .collect(),
-                ),
-                body: Some(Box::new(Statement::Block(body))),
-            },
-        ),
+        Statement::FuncDef(Function {
+            name: id,
+            kind: Some(parse_type(&return_type)),
+            params: Some(
+                params
+                    .into_iter()
+                    .map(|(name, type_name)| (name, parse_type(&type_name)))
+                    .collect(),
+            ),
+            body: Some(Box::new(Statement::Block(body))),
+        }),
     ))
 }
-
 
 //return statement parsing
 fn return_statement(input: &str) -> IResult<&str, Statement> {
@@ -529,7 +538,6 @@ pub fn parse(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = space0(input)?; // Consume trailing whitespace
     Ok((input, statements))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -795,7 +803,15 @@ mod tests {
                     }
                     None => panic!("Expected Some params"),
                 }
-                assert_eq!(func.body, Some(Box::new(Statement::Block(vec![Statement::Return(Box::new(Expression::Add(Box::new(Expression::Var("x".to_string())),Box::new(Expression::Var("y".to_string())))))]))));
+                assert_eq!(
+                    func.body,
+                    Some(Box::new(Statement::Block(vec![Statement::Return(
+                        Box::new(Expression::Add(
+                            Box::new(Expression::Var("x".to_string())),
+                            Box::new(Expression::Var("y".to_string()))
+                        ))
+                    )])))
+                );
             }
             _ => panic!("Expected FuncDef"),
         }
@@ -1094,12 +1110,17 @@ mod tests {
     #[test]
     fn test_try_unwrap_expression() {
         let input = "tryUnwrap(Ok(42))";
-        let expected = Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(42)))));
-        
+        let expected =
+            Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(42)))));
+
         let (remaining, parsed) = tryunwrap_expression(input).expect("Parsing failed");
-        
+
         assert_eq!(parsed, expected);
-        assert!(remaining.is_empty(), "Remaining input should be empty but got: {}", remaining);
+        assert!(
+            remaining.is_empty(),
+            "Remaining input should be empty but got: {}",
+            remaining
+        );
     }
 
     #[test]
@@ -1293,60 +1314,47 @@ mod tests {
     fn test_create_function_with_keyword_if() {
         let input = "def if(x: TInteger) -> TInteger:\n    return x";
         let result = function_def(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_create_function_with_keyword_while() {
         let input = "def while(x: TInteger) -> TInteger:\n    return x";
         let result = function_def(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_create_function_with_keyword_ok() {
         let input = "def Ok(x: TInteger) -> TInteger:\n    return x";
         let result = function_def(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_var_declaration_with_keyword_if() {
         let input = "if = 10";
         let result = assignment(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_var_declaration_with_keyword_while() {
         let input = "while = 10";
         let result = assignment(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_var_declaration_with_keyword_ok() {
         let input = "Ok = 10";
         let result = assignment(input);
-    
-        assert!(
-            result.is_err()
-        );
+
+        assert!(result.is_err());
     }
-    
 }
