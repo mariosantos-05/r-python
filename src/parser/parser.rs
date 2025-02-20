@@ -98,6 +98,7 @@ fn expression(input: &str) -> IResult<&str, Expression> {
         arithmetic_expression,
         real,
         integer,
+        tryUnwrap_expression,
         ok_expression,
         err_expression,
         just_expression,
@@ -228,6 +229,18 @@ fn propagate_operator(input: &str) -> IResult<&str, Expression> {
     }
 }
 */
+
+fn tryUnwrap_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, _) = tag("tryUnwrap")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, expr) = delimited(
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')'))),
+    )(input)?;
+
+    Ok((input, Expression::Propagate(Box::new(expr))))
+}
 
 fn ok_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("Ok")(input)?;
@@ -1097,6 +1110,17 @@ mod tests {
             assert_eq!(rest, "");
             assert_eq!(result, expected);
         }
+    }
+
+    #[test]
+    fn test_try_unwrap_expression() {
+        let input = "tryUnwrap(Ok(42))";
+        let expected = Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(42)))));
+        
+        let (remaining, parsed) = tryUnwrap_expression(input).expect("Parsing failed");
+        
+        assert_eq!(parsed, expected);
+        assert!(remaining.is_empty(), "Remaining input should be empty but got: {}", remaining);
     }
 
     #[test]
