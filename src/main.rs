@@ -365,28 +365,33 @@ fn run_test(name: &str, program: &str) -> String {
                 return output;
             }
 
-            let mut current_env = HashMap::new();
+            let mut current_env = Environment::<EnvValue>::new();
 
             // Initialize variables
             for stmt in &statements {
                 match stmt {
-                    Statement::Assignment(name, _, _) => {
-                        if !current_env.contains_key(name) {
-                            current_env.insert(name.clone(), (None, Type::TInteger));
+                    Statement::Assignment(name, expr, _) => {
+                        if current_env.search_frame(name.clone()).is_none() {
+                            current_env.insert_variable(
+                                name.clone(),
+                                EnvValue::Exp(expr.as_ref().clone()),
+                            );
                         }
                     }
-                    Statement::FuncDef(name, func) => {
-                        if !current_env.contains_key(name) {
-                            current_env.insert(name.clone(), (None, func.kind.clone()));
-                        }
+                    Statement::FuncDef(func) => {
+                        current_env
+                            .insert_variable(func.name.clone(), EnvValue::Func(func.clone()));
                     }
                     Statement::IfThenElse(_, then_block, else_block) => {
                         // Handle variables in if blocks
                         if let Statement::Block(stmts) = &**then_block {
                             for s in stmts {
                                 if let Statement::Assignment(name, _, _) = s {
-                                    if !current_env.contains_key(name) {
-                                        current_env.insert(name.clone(), (None, Type::TInteger));
+                                    if !current_env.search_frame(name.clone()).is_none() {
+                                        current_env.insert_variable(
+                                            name.clone(),
+                                            EnvValue::Exp(Expression::CInt(0)),
+                                        );
                                     }
                                 }
                             }
@@ -395,9 +400,11 @@ fn run_test(name: &str, program: &str) -> String {
                             if let Statement::Block(stmts) = &**else_stmt {
                                 for s in stmts {
                                     if let Statement::Assignment(name, _, _) = s {
-                                        if !current_env.contains_key(name) {
-                                            current_env
-                                                .insert(name.clone(), (None, Type::TInteger));
+                                        if !current_env.search_frame(name.clone()).is_none() {
+                                            current_env.insert_variable(
+                                                name.clone(),
+                                                EnvValue::Exp(Expression::CInt(0)),
+                                            );
                                         }
                                     }
                                 }
@@ -410,7 +417,7 @@ fn run_test(name: &str, program: &str) -> String {
 
             // Execute statements
             for stmt in statements {
-                match execute(stmt, &current_env, false) {
+                match execute(stmt, &current_env) {
                     Ok(ControlFlow::Continue(new_env)) => {
                         current_env = new_env;
                     }

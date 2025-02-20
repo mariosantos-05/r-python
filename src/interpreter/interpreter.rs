@@ -41,6 +41,7 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
     }
 }
 
+
 pub fn run(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, String> {
     match execute(stmt, env) {
         Ok(e) => Ok(e),
@@ -48,14 +49,15 @@ pub fn run(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, 
     }
 }
 
+
 fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
 
     let result = match stmt {
         Statement::Assignment(name, exp, _) => {
             let value = eval(*exp, &new_env)?;
-            new_env.insert_variable(name, value);
-            return Ok(ControlFlow::Continue(new_env));
+            new_env.insert_variable(name, value); // Remove the tuple
+            Ok(ControlFlow::Continue(new_env))
         }
 
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
@@ -87,7 +89,6 @@ fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, 
                     EnvValue::Exp(Expression::CTrue) => match execute(*stmt.clone(), &new_env)? {
                         ControlFlow::Continue(control_env) => {
                             new_env = control_env;
-
                             value = eval(*cond.clone(), &new_env)?;
                         }
                         ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
@@ -105,10 +106,8 @@ fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, 
             }
             ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
         },
-
         Statement::FuncDef(func) => {
-            new_env.insert_variable(func.name.clone(), EnvValue::Func(func));
-
+            new_env.insert_variable(func.name.clone(), EnvValue::Func(func.clone()));
             Ok(ControlFlow::Continue(new_env))
         }
 
