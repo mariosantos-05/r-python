@@ -37,55 +37,6 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
 
 
 
-fn _matches_expression_(value: &EnvValue, pattern: &Expression, env: &Environment<EnvValue>) -> Result<bool, ErrorMessage> {
-    let mut new_env = env.clone();
-
-    match (value, pattern) {
-        /* Wildcard matches anything */
-        (_, Expression::Var(name)) if name == "_" => Ok(true),
-
-        /* Variable pattern binds the value to a variable */
-        (value, Expression::Var(name)) => {
-            new_env.insert_variable(name.clone(), value.clone());
-            Ok(true)
-        }
-
-        /* Constructor pattern matches ADT constructors */
-        (
-            EnvValue::Exp(Expression::ADTConstructor(adt_name, constructor_name, args)),
-            Expression::ADTConstructor(pat_adt_name, pat_constructor_name, pat_args),
-        ) => {
-            // Check if the constructor names match
-            if adt_name == pat_adt_name && constructor_name == pat_constructor_name {
-                // Check if the number of arguments matches
-                if args.len() == pat_args.len() {
-                    // Recursively check if the arguments match
-                    for (arg, pat_arg) in args.iter().zip(pat_args.iter()) {
-                        if !_matches_expression_(&EnvValue::Exp(*arg.clone()), &*pat_arg, env)? {
-                            return Ok(false);
-                        }
-                    }
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            } else {
-                Ok(false)
-            }
-        }
-
-        /* Literal patterns */
-        (EnvValue::Exp(Expression::CInt(i)), Expression::CInt(j)) => Ok(i == j),
-        (EnvValue::Exp(Expression::CTrue), Expression::CTrue) => Ok(true),
-        (EnvValue::Exp(Expression::CFalse), Expression::CFalse) => Ok(true),
-        (EnvValue::Exp(Expression::CReal(r)), Expression::CReal(s)) => Ok(r == s),
-        (EnvValue::Exp(Expression::CString(s)), Expression::CString(t)) => Ok(s == t),
-
-        /* Default case: no match */
-        _ => Ok(false),
-    }
-}
-
 fn adtconstructor_eval(
     adt_name: Name,
     constructor_name: Name,
@@ -125,6 +76,41 @@ fn adtconstructor_eval(
         }
     } else {
         Err(format!("Error: ADT {} not found", adt_name))
+    }
+}
+
+
+fn matches_pattern(
+    value: &EnvValue,
+    pattern: &Expression,
+    env: &Environment<EnvValue>,
+) -> Result<bool, ErrorMessage> {
+    match (value, pattern) {
+        // Caso o padrão seja um construtor de ADT
+        (
+            EnvValue::Exp(Expression::ADTConstructor(adt_name1, constructor_name1, args1)),
+            Expression::ADTConstructor(adt_name2, constructor_name2, args2),
+        ) => {
+            // Verifica se o nome do ADT e o construtor correspondem
+            if adt_name1 == adt_name2 && constructor_name1 == constructor_name2 {
+                // Verifica se os argumentos correspondem
+                for (arg1, arg2) in args1.iter().zip(args2.iter()) {
+                    let arg_value = eval(*arg1.clone(), env)?;
+                    if !matches_pattern(&arg_value, arg2, env)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+
+        // Caso o padrão seja uma constante (como um número ou booleano)
+        (EnvValue::Exp(exp1), exp2) if is_constant(exp2.clone()) => Ok(exp1 == exp2),
+
+        // Outros casos podem ser adicionados aqui (como variáveis, etc.)
+        _ => Err("Pattern not supported".to_string()),
     }
 }
 
@@ -192,6 +178,22 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
             Ok(ControlFlow::Continue(new_env))
         }
 
+        Statement::Match(exp, cases) => {
+            // Avalia a expressão que está sendo comparada
+            let value = eval(*exp, &new_env)?;
+
+            // Itera sobre os casos de pattern matching
+            for (pattern, stmt) in cases {
+                // Verifica se o padrão corresponde ao valor
+                if matches_pattern(&value, &pattern, &new_env)? {
+                    // Executa o bloco correspondente
+                    return execute(*stmt, &new_env);
+                }
+            }
+
+            // Se nenhum padrão corresponder, retorna um erro
+            Err("No matching pattern found".to_string())
+        }
         
         _ => Err(String::from("not implemented yet")),
     }
@@ -1320,4 +1322,247 @@ mod tests {
         assert!(rectangle_value.is_some());
     }
     
+
+    #[test]
+    fn test_adt_pattern_matching() {
+        // Cria um novo ambiente
+        let env: Environment<EnvValue> = Environment::new();
+        println!("Ambiente inicial criado.");
+
+        // Declara a ADT Shape com dois construtores: Circle e Rectangle
+        let shape_adt = Statement::ADTDeclaration(
+            "Shape".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Circle".to_string(),
+                    types: vec![Type::TReal], // Circle tem um parâmetro: radius
+                },
+                ValueConstructor {
+                    name: "Rectangle".to_string(),
+                    types: vec![Type::TReal, Type::TReal], // Rectangle tem dois parâmetros: width e height
+                },
+            ],
+        );
+
+        println!("Declarando a ADT Shape com construtores Circle e Rectangle...");
+
+        // Executa a declaração da ADT e obtém o novo ambiente
+        let result = execute(shape_adt, &env);
+        assert!(result.is_ok());
+        println!("ADT Shape declarada com sucesso.");
+
+        let new_env = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue");
+        };
+
+        // Cria uma instância de Circle com radius = 5.0
+        let circle_instance = Expression::ADTConstructor(
+            "Shape".to_string(), // Nome da ADT
+            "Circle".to_string(), // Nome do construtor
+            vec![Box::new(Expression::CReal(5.0))], // Argumento (radius)
+        );
+
+        println!("Criando uma instância de Circle com radius = 5.0...");
+
+        // Atribui a instância de Circle a uma variável chamada "shape"
+        let assign_circle = Statement::Assignment(
+            "shape".to_string(), // Nome da variável
+            Box::new(circle_instance), // Valor (instância de Circle)
+            Some(Type::Tadt("Shape".to_string(), new_env.get_type(&"Shape".to_string()).unwrap().clone())), // Tipo (Shape)
+        );
+
+        println!("Atribuindo a instância de Circle à variável 'shape'...");
+
+        // Executa a atribuição e obtém o novo ambiente
+        let result = execute(assign_circle, &new_env);
+        assert!(result.is_ok());
+        println!("Instância de Circle atribuída à variável 'shape' com sucesso.");
+
+        let new_env_after_assignment = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue");
+        };
+
+        // Define um bloco de pattern matching para verificar o tipo da variável "shape"
+        let match_stmt = Statement::Match(
+            Box::new(Expression::Var("shape".to_string())), // Expressão a ser comparada
+            vec![
+                // Caso 1: Circle
+                (
+                    Expression::ADTConstructor("Shape".to_string(), "Circle".to_string(), vec![]),
+                    Box::new(Statement::Return(Box::new(Expression::CString("It's a circle!".to_string())))),
+                ),
+                // Caso 2: Rectangle
+                (
+                    Expression::ADTConstructor("Shape".to_string(), "Rectangle".to_string(), vec![]),
+                    Box::new(Statement::Return(Box::new(Expression::CString("It's a rectangle!".to_string())))),
+                ),
+            ],
+        );
+
+        println!("Executando pattern matching na variável 'shape'...");
+
+        // Executa o pattern matching
+        let result = execute(match_stmt, &new_env_after_assignment);
+        assert!(result.is_ok());
+        println!("Pattern matching executado com sucesso.");
+
+        // Verifica o resultado do pattern matching
+        if let Ok(ControlFlow::Return(EnvValue::Exp(Expression::CString(message)))) = result {
+            println!("Resultado do pattern matching: {}", message);
+            assert_eq!(message, "It's a circle!"); // Espera-se que o padrão Circle seja correspondido
+        } else {
+            panic!("Expected ControlFlow::Return with a string message");
+        }
+    }
+
+    #[test]
+    fn test_pattern_matching_calculando_area_figuras() {
+        // Cria um novo ambiente
+        let env: Environment<EnvValue> = Environment::new();
+
+        // Declara a ADT FiguraGeometrica com três construtores: Circle, Rectangle e Triangle
+        let figura_adt = Statement::ADTDeclaration(
+            "FiguraGeometrica".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Círculo".to_string(),
+                    types: vec![Type::TReal], // Um parâmetro: raio
+                },
+                ValueConstructor {
+                    name: "Retângulo".to_string(),
+                    types: vec![Type::TReal, Type::TReal], // Dois parâmetros: largura e altura
+                },
+                ValueConstructor {
+                    name: "Triângulo".to_string(),
+                    types: vec![Type::TReal, Type::TReal], // Dois parâmetros: base e altura
+                },
+            ],
+        );
+
+        // Executa a declaração da ADT e obtém o novo ambiente
+        let result = execute(figura_adt, &env);
+        assert!(result.is_ok());
+
+        let new_env = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue");
+        };
+
+        // Cria instâncias de figuras geométricas com valores para os parâmetros
+        let circulo_instance = Expression::ADTConstructor(
+            "FiguraGeometrica".to_string(),
+            "Círculo".to_string(),
+            vec![Box::new(Expression::CReal(5.0))], // Raio = 5.0
+        );
+
+        let retangulo_instance = Expression::ADTConstructor(
+            "FiguraGeometrica".to_string(),
+            "Retângulo".to_string(),
+            vec![
+                Box::new(Expression::CReal(3.0)), // Largura = 3.0
+                Box::new(Expression::CReal(4.0)), // Altura = 4.0
+            ],
+        );
+
+        let triangulo_instance = Expression::ADTConstructor(
+            "FiguraGeometrica".to_string(),
+            "Triângulo".to_string(),
+            vec![
+                Box::new(Expression::CReal(6.0)), // Base = 6.0
+                Box::new(Expression::CReal(4.0)), // Altura = 4.0
+            ],
+        );
+
+        // Atribui as instâncias a variáveis
+        let assign_circulo = Statement::Assignment(
+            "X".to_string(),
+            Box::new(circulo_instance),
+            Some(Type::Tadt(
+                "FiguraGeometrica".to_string(),
+                new_env.get_type(&"FiguraGeometrica".to_string()).unwrap().clone(),
+            )),
+        );
+
+        let assign_retangulo = Statement::Assignment(
+            "Y".to_string(),
+            Box::new(retangulo_instance),
+            Some(Type::Tadt(
+                "FiguraGeometrica".to_string(),
+                new_env.get_type(&"FiguraGeometrica".to_string()).unwrap().clone(),
+            )),
+        );
+
+        let assign_triangulo = Statement::Assignment(
+            "Z".to_string(),
+            Box::new(triangulo_instance),
+            Some(Type::Tadt(
+                "FiguraGeometrica".to_string(),
+                new_env.get_type(&"FiguraGeometrica".to_string()).unwrap().clone(),
+            )),
+        );
+
+        // Executa as atribuições
+        let result = execute(assign_circulo, &new_env);
+        assert!(result.is_ok());
+
+        let new_env_after_circulo = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue after circulo assignment");
+        };
+
+        let result = execute(assign_retangulo, &new_env_after_circulo);
+        assert!(result.is_ok());
+
+        let new_env_after_retangulo = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue after retangulo assignment");
+        };
+
+        let result = execute(assign_triangulo, &new_env_after_retangulo);
+        assert!(result.is_ok());
+
+        
+        let match_stmt = Statement::Match(
+            Box::new(Expression::Var("X".to_string())), // Expressão a ser comparada
+            vec![
+                // Caso 1: Círculo -> Área = π * r^2
+                (
+                    Expression::ADTConstructor("FiguraGeometrica".to_string(), "Círculo".to_string(), vec![]),
+                    Box::new(Statement::Return(Box::new(Expression::CReal(3.14 * 5.0 * 5.0)))), // Área do círculo
+                ),
+                // Caso 2: Retângulo -> Área = largura * altura
+                (
+                    Expression::ADTConstructor("FiguraGeometrica".to_string(), "Retângulo".to_string(), vec![]),
+                    Box::new(Statement::Return(Box::new(Expression::CReal(3.0 * 7.0)))), // Área do retângulo
+                ),
+                // Caso 3: Triângulo -> Área = (base * altura) / 2
+                (
+                    Expression::ADTConstructor("FiguraGeometrica".to_string(), "Triângulo".to_string(), vec![]),
+                    Box::new(Statement::Return(Box::new(Expression::CReal(0.5 * 6.0 * 4.0)))), // Área do triângulo
+                ),
+            ],
+        );
+
+        // Executa o pattern matching
+        let result = execute(match_stmt, &new_env_after_retangulo);
+        assert!(result.is_ok());
+
+        // Verifica o resultado do pattern matching
+        if let Ok(ControlFlow::Return(EnvValue::Exp(Expression::CReal(area)))) = result {
+            println!("Resultado da área calculada: {}", area);
+            assert_eq!(area, 78.5); 
+        } else {
+            panic!("Expected ControlFlow::Return with a real value for area");
+        }
+    }
+
+
+
 }
