@@ -189,5 +189,6 @@ pub enum Statement {
     FuncDef(Function),
     Return(Box<Expression>),
     ADTDeclaration(Name, Vec<ValueConstructor>),
-    
+    Match(Box<Expression>, Vec<(Expression, Box<Statement>)>),
+
 }

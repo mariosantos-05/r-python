@@ -36,19 +36,66 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
 }
 
 
+
+fn _matches_expression_(value: &EnvValue, pattern: &Expression, env: &Environment<EnvValue>) -> Result<bool, ErrorMessage> {
+    let mut new_env = env.clone();
+
+    match (value, pattern) {
+        /* Wildcard matches anything */
+        (_, Expression::Var(name)) if name == "_" => Ok(true),
+
+        /* Variable pattern binds the value to a variable */
+        (value, Expression::Var(name)) => {
+            new_env.insert_variable(name.clone(), value.clone());
+            Ok(true)
+        }
+
+        /* Constructor pattern matches ADT constructors */
+        (
+            EnvValue::Exp(Expression::ADTConstructor(adt_name, constructor_name, args)),
+            Expression::ADTConstructor(pat_adt_name, pat_constructor_name, pat_args),
+        ) => {
+            // Check if the constructor names match
+            if adt_name == pat_adt_name && constructor_name == pat_constructor_name {
+                // Check if the number of arguments matches
+                if args.len() == pat_args.len() {
+                    // Recursively check if the arguments match
+                    for (arg, pat_arg) in args.iter().zip(pat_args.iter()) {
+                        if !_matches_expression_(&EnvValue::Exp(*arg.clone()), &*pat_arg, env)? {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+
+        /* Literal patterns */
+        (EnvValue::Exp(Expression::CInt(i)), Expression::CInt(j)) => Ok(i == j),
+        (EnvValue::Exp(Expression::CTrue), Expression::CTrue) => Ok(true),
+        (EnvValue::Exp(Expression::CFalse), Expression::CFalse) => Ok(true),
+        (EnvValue::Exp(Expression::CReal(r)), Expression::CReal(s)) => Ok(r == s),
+        (EnvValue::Exp(Expression::CString(s)), Expression::CString(t)) => Ok(s == t),
+
+        /* Default case: no match */
+        _ => Ok(false),
+    }
+}
+
 fn adtconstructor_eval(
     adt_name: Name,
     constructor_name: Name,
     args: Vec<Box<Expression>>,
     env: &Environment<EnvValue>,
 ) -> Result<EnvValue, String> {
-
     if let Some(constructors) = env.get_type(&adt_name) {
-        
         let value_constructor = constructors.iter().find(|vc| vc.name == constructor_name);
-
+        
         if let Some(vc) = value_constructor {
-
             if vc.types.len() != args.len() {
                 return Err(format!(
                     "Error: Constructor {} expects {} arguments, but received {}",
@@ -57,8 +104,6 @@ fn adtconstructor_eval(
                     args.len()
                 ));
             }
-
-
             let evaluated_args: Result<Vec<Box<Expression>>, String> = args
                 .into_iter()
                 .map(|arg| {
@@ -146,9 +191,12 @@ pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFl
             // Return the new environment along with ControlFlow
             Ok(ControlFlow::Continue(new_env))
         }
+
+        
         _ => Err(String::from("not implemented yet")),
     }
 }
+
 
 fn call(
     name: Name,
@@ -1132,39 +1180,60 @@ mod tests {
     }
 
     #[test]
+    fn test_adt_constructor() {
+        let mut env = Environment::new();
+        env.insert_type("Shape".to_string(), vec![
+            ValueConstructor { name: "Circle".to_string(), types: vec![TReal] },
+            ValueConstructor { name: "Rectangle".to_string(), types: vec![TReal, TReal] },
+            ValueConstructor { name: "Triangle".to_string(), types: vec![TReal, TReal, TReal] },
+        ]);
+
+        let circle_expr = Expression::ADTConstructor("Shape".to_string(), "Circle".to_string(), vec![Box::new(Expression::CReal(5.0))]);
+        let result = eval(circle_expr, &env);
+
+        assert!(result.is_ok());
+        if let Ok(EnvValue::Exp(Expression::ADTConstructor(_, _, args))) = result {
+            assert_eq!(args.len(), 1);
+        } else {
+            panic!("Failed to evaluate ADT constructor");
+        }
+    
+    }
+    #[test]
     fn test_complex_adt() {
-    // Declare the environment
-    let env: Environment<EnvValue> = Environment::new();
-
-    // Declare the Shape ADT
-    let shape_adt = Statement::ADTDeclaration(
-        "Shape".to_string(),
-        vec![
-            ValueConstructor {
-                name: "Circle".to_string(),
-                types: vec![Type::TReal], // One parameter: radius
-            },
-            ValueConstructor {
-                name: "Rectangle".to_string(),
-                types: vec![Type::TReal, Type::TReal], // Two parameters: width and height
-            },
-            ValueConstructor {
-                name: "Triangle".to_string(),
-                types: vec![Type::TReal, Type::TReal, Type::TReal], // Three parameters: sides
-            },
-        ],
-    );
-
-    // Execute the ADT declaration and get the new environment
-    let result = execute(shape_adt, &env);
-    assert!(result.is_ok());
-
-    // Extract the new environment from ControlFlow::Continue
-    if let Ok(ControlFlow::Continue(new_env)) = result {
+        // Declare the environment
+        let env: Environment<EnvValue> = Environment::new();
+    
+        // Declare the Shape ADT
+        let shape_adt = Statement::ADTDeclaration(
+            "Shape".to_string(),
+            vec![
+                ValueConstructor {
+                    name: "Circle".to_string(),
+                    types: vec![Type::TReal], // One parameter: radius
+                },
+                ValueConstructor {
+                    name: "Rectangle".to_string(),
+                    types: vec![Type::TReal, Type::TReal], // Two parameters: width and height
+                }
+            ],
+        );
+    
+        // Execute the ADT declaration and get the new environment
+        let result = execute(shape_adt, &env);
+        assert!(result.is_ok());
+    
+        // Extract the new environment from ControlFlow::Continue
+        let new_env = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue");
+        };
+    
         // Check if the ADT is correctly inserted into the new environment
         let shape_type = new_env.get_type(&"Shape".to_string());
         assert!(shape_type.is_some());
-
+    
         // Print the entire ADT for debugging
         let constructors = shape_type.unwrap();
         println!("ADT: Shape");
@@ -1174,27 +1243,81 @@ mod tests {
                 constructor.name, constructor.types
             );
         }
-
+    
         // Verify the constructors
-        assert_eq!(constructors.len(), 3);
-
+        assert_eq!(constructors.len(), 2);
+    
         // Verify Circle constructor
         assert_eq!(constructors[0].name, "Circle");
         assert_eq!(constructors[0].types, vec![Type::TReal]);
-
+    
         // Verify Rectangle constructor
         assert_eq!(constructors[1].name, "Rectangle");
         assert_eq!(constructors[1].types, vec![Type::TReal, Type::TReal]);
-
-        // Verify Triangle constructor
-        assert_eq!(constructors[2].name, "Triangle");
-        assert_eq!(
-            constructors[2].types,
-            vec![Type::TReal, Type::TReal, Type::TReal]
+    
+        // Create instances of the ADT
+        let circle_instance = Expression::ADTConstructor(
+            "Shape".to_string(), // ADT name
+            "Circle".to_string(), // Constructor name
+            vec![Box::new(Expression::CReal(5.0))], // Arguments (radius)
         );
-    } else {
-        panic!("Expected ControlFlow::Continue");
+    
+        let rectangle_instance = Expression::ADTConstructor(
+            "Shape".to_string(), // ADT name
+            "Rectangle".to_string(), // Constructor name
+            vec![
+                Box::new(Expression::CReal(3.0)), // Argument (width)
+                Box::new(Expression::CReal(4.0)), // Argument (height)
+            ],
+        );
+    
+        // Assign instances to variables
+        let assign_rectangle = Statement::Assignment(
+            "rectangle".to_string(), // Variable name
+            Box::new(rectangle_instance), // Value
+            Some(Type::Tadt("Shape".to_string(), constructors.clone())), // Type annotation
+        );
+    
+        let assign_circle = Statement::Assignment(
+            "circle".to_string(), // Variable name
+            Box::new(circle_instance), // Value
+            Some(Type::Tadt("Shape".to_string(), constructors.clone())), // Type annotation
+        );
+    
+        // Execute the assignments
+        let result = execute(assign_rectangle, &new_env);
+        assert!(result.is_ok());
+    
+        // Extract the updated environment after the first assignment
+        let new_env_after_rectangle = if let Ok(ControlFlow::Continue(new_env)) = result {
+            new_env
+        } else {
+            panic!("Expected ControlFlow::Continue after rectangle assignment");
+        };
+    
+        // Verify the rectangle value is present
+        let rectangle_value = new_env_after_rectangle.search_frame("rectangle".to_string());
+        println!("Rectangle value: {:?}", rectangle_value);
+        assert!(rectangle_value.is_some());
+    
+        let result = execute(assign_circle, &new_env_after_rectangle);
+        assert!(result.is_ok());
+    
+        // Extract the final environment after the second assignment
+        let final_env = if let Ok(ControlFlow::Continue(final_env)) = result {
+            final_env
+        } else {
+            panic!("Expected ControlFlow::Continue after circle assignment");
+        };
+    
+        // Verify that the variables are correctly assigned
+        let circle_value = final_env.search_frame("circle".to_string());
+        println!("Circle value: {:?}", circle_value);
+        assert!(circle_value.is_some());
+    
+        let rectangle_value = final_env.search_frame("rectangle".to_string());
+        println!("Rectangle value: {:?}", rectangle_value);
+        assert!(rectangle_value.is_some());
     }
-}
-
+    
 }
