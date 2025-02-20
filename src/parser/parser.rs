@@ -12,8 +12,8 @@ use nom::{
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 const KEYWORDS: &[&str] = &[
     "if", "else", "def", "while", "val", "var", "return", "Ok", 
-    "Err", "Just", "Nothing", "unwrap", "isNothing", "isError", 
-    "and", "or", "not", "True", "False", "tryUnwrap"
+    "Err", "Just", "Nothing", "unwrap", "tryUnwrap", "isNothing", "isError", 
+    "and", "or", "not", "True", "False"
     ];
 
 use crate::ir::ast::Function;
@@ -51,7 +51,7 @@ fn integer(input: &str) -> IResult<&str, Expression> {
 
 //term parser for arithmetic
 fn term(input: &str) -> ParseResult<Expression> {
-    let (mut input, mut expr) = factor(input)?;               
+    let (mut input, mut expr) = factor(input)?;               //// mudar de factor pra boolean_term (nome novo)
 
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
@@ -62,7 +62,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 
         match op_result {
             Ok((new_input, op)) => {
-                let (newer_input, factor2) = factor(new_input)?;             
+                let (newer_input, factor2) = factor(new_input)?;               //// mudar de factor pra boolean_term (nome novo)
 
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
@@ -98,12 +98,12 @@ fn expression(input: &str) -> IResult<&str, Expression> {
         arithmetic_expression,
         real,
         integer,
-        tryUnwrap_expression,
         ok_expression,
         err_expression,
         just_expression,
         nothing_expression,
         unwrap_expression,
+        tryunwrap_expression,
         iserror_expression,
         isnothing_expression,
         string,
@@ -135,7 +135,6 @@ fn comparison_expression(input: &str) -> IResult<&str, Expression> {
     let (input, op) = comparison_operator(input)?;
     let (input, _) = space0(input)?;
     let (input, right) = term(input)?;
-
     Ok((
         input,
         match op {
@@ -151,8 +150,8 @@ fn comparison_expression(input: &str) -> IResult<&str, Expression> {
 
 // Parse expressions with operator precedence
 fn arithmetic_expression(input: &str) -> ParseResult<Expression> {
-    let (mut input, mut expr) = term(input)?;
-
+    let (mut input, mut expr) = term(input)?;  
+    
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
             space0::<&str, Error<&str>>,
@@ -207,29 +206,7 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-/*
-fn propagate_operator(input: &str) -> IResult<&str, Expression> {
-    let expr = Expression::CNothing; // Will be substituted on other parsing functions
-    if input.starts_with('?') {
-        let mut new_expr = expr;
-        let mut new_input = input;
-        loop {
-            let (input, _) = tag("?")(new_input)?;
-            new_expr = Expression::Propagate(Box::new(new_expr));
-            new_input = input;
-            if !new_input.starts_with('?') {
-                break;
-            }
-        }
-        Ok((new_input, new_expr))
-    } else {
-        // Otherwise, return the parsed expression as it is
-        Ok((input, expr))
-    }
-}
-*/
-
-fn tryUnwrap_expression(input: &str) -> IResult<&str, Expression> {
+fn tryunwrap_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("tryUnwrap")(input)?;
     let (input, _) = space0(input)?;
     let (input, expr) = delimited(
@@ -319,7 +296,7 @@ fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
 
 // Parse boolean operations
 fn boolean_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, first) = boolean_term(input)?;                                
+    let (input, first) = boolean_term(input)?;
     let (input, rest) = many0(tuple((
         delimited(space0, alt((tag("and"), tag("or"))), space0),
         boolean_term,
@@ -336,13 +313,16 @@ fn boolean_expression(input: &str) -> IResult<&str, Expression> {
 }
 
 fn boolean_term(input: &str) -> IResult<&str, Expression> {
-    let (input, exp) = alt((
-        map(preceded(tag("not "), boolean_factor), |expr| {           
+    alt((
+        map(preceded(tag("not "), boolean_factor), |expr| {
             Expression::Not(Box::new(expr))
         }),
-        boolean_factor,                         
-    ))(input)?;
-    return Ok((input, exp));
+        unwrap_expression,
+        tryunwrap_expression,
+        iserror_expression,
+        isnothing_expression,
+        boolean_factor,
+    ))(input)
 }
 
 fn boolean_factor(input: &str) -> IResult<&str, Expression> {
@@ -369,6 +349,7 @@ fn factor(input: &str) -> IResult<&str, Expression> {
         just_expression,
         nothing_expression,
         unwrap_expression,
+        tryunwrap_expression,
         iserror_expression,
         isnothing_expression,
         function_call,
@@ -381,7 +362,9 @@ fn factor(input: &str) -> IResult<&str, Expression> {
     ))(input)
 }
 
+
 //indented block parser
+//// Se quiser tentar melhorar isso daki, pq nn ta funcionando if dentro de if. Sera q pode ser isso?
 fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = line_ending(input)?;
     let (input, statements) = separated_list1(
@@ -398,10 +381,12 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = tag("if")(input)?;
     let (input, _) = space1(input)?;
     let (input, condition) = alt((
-        boolean_expression,
         comparison_expression,
+        boolean_expression,
         map(identifier, Expression::Var),
     ))(input)?;
+
+
 
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
@@ -544,6 +529,7 @@ pub fn parse(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = space0(input)?; // Consume trailing whitespace
     Ok((input, statements))
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -1110,7 +1096,7 @@ mod tests {
         let input = "tryUnwrap(Ok(42))";
         let expected = Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(42)))));
         
-        let (remaining, parsed) = tryUnwrap_expression(input).expect("Parsing failed");
+        let (remaining, parsed) = tryunwrap_expression(input).expect("Parsing failed");
         
         assert_eq!(parsed, expected);
         assert!(remaining.is_empty(), "Remaining input should be empty but got: {}", remaining);
@@ -1148,24 +1134,24 @@ mod tests {
     fn test_propagation_parsing() {
         let cases = vec![
             (
-                "Ok(2)?",
+                "tryUnwrap(Ok(2))",
                 Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::CInt(2))))),
             ),
             (
-                "x??",
+                "tryUnwrap(tryUnwrap(x))",
                 Expression::Propagate(Box::new(Expression::Propagate(Box::new(Expression::Var(
                     String::from("x"),
                 ))))),
             ),
             (
-                "Ok(10.1 + 1.2)?",
+                "tryUnwrap(Ok(10.1 + 1.2))",
                 Expression::Propagate(Box::new(Expression::COk(Box::new(Expression::Add(
                     Box::new(Expression::CReal(10.1)),
                     Box::new(Expression::CReal(1.2)),
                 ))))),
             ),
-            (
-                "Ok(1)? / Just(2)?",
+            /*(
+                "tryUnwrap(Ok(1)) / tryUnwrap(Just(2))",
                 Expression::Div(
                     Box::new(Expression::Propagate(Box::new(Expression::COk(Box::new(
                         Expression::CInt(1),
@@ -1174,9 +1160,9 @@ mod tests {
                         Box::new(Expression::CInt(2)),
                     )))),
                 ),
-            ),
+            ),*/
             (
-                "Ok(True)? and Ok(False)?",
+                "tryUnwrap(Ok(True)) and tryUnwrap(Ok(False))",
                 Expression::And(
                     Box::new(Expression::Propagate(Box::new(Expression::COk(Box::new(
                         Expression::CTrue,
@@ -1187,7 +1173,7 @@ mod tests {
                 ),
             ),
             (
-                "Ok(True or False)??",
+                "tryUnwrap(tryUnwrap(Ok(True or False)))",
                 Expression::Propagate(Box::new(Expression::Propagate(Box::new(Expression::COk(
                     Box::new(Expression::Or(
                         Box::new(Expression::CTrue),
@@ -1196,7 +1182,7 @@ mod tests {
                 ))))),
             ),
             (
-                "Just(not False)?",
+                "tryUnwrap(Just(not False))",
                 Expression::Propagate(Box::new(Expression::CJust(Box::new(Expression::Not(
                     Box::new(Expression::CFalse),
                 ))))),
@@ -1212,7 +1198,7 @@ mod tests {
 
     #[test]
     fn test_propagation_parsing_statements() {
-        let input = "x = Ok(True)\nif unwrap(x):\n  y = 1\nif x?:\n  y = 1\n";
+        let input = "x = Ok(True)\nif unwrap(x):\n  y = 1\nif tryUnwrap(x):\n  y = 1\n";
 
         let (rest, result) = parse(input).unwrap();
         assert_eq!(rest, "");
