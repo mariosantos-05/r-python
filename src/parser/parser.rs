@@ -13,7 +13,7 @@ type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
 const KEYWORDS: &[&str] = &[
     "if", "else", "def", "while", "val", "var", "return", "Ok", 
     "Err", "Just", "Nothing", "unwrap", "isNothing", "isError", 
-    "and", "or", "not", "True", "False"
+    "and", "or", "not", "True", "False", "tryUnwrap"
     ];
 
 use crate::ir::ast::Function;
@@ -51,7 +51,7 @@ fn integer(input: &str) -> IResult<&str, Expression> {
 
 //term parser for arithmetic
 fn term(input: &str) -> ParseResult<Expression> {
-    let (mut input, mut expr) = factor(input)?;               //// mudar de factor pra boolean_term (nome novo)
+    let (mut input, mut expr) = factor(input)?;               
 
     loop {
         let op_result = delimited::<_, _, _, _, Error<&str>, _, _, _>(
@@ -62,7 +62,7 @@ fn term(input: &str) -> ParseResult<Expression> {
 
         match op_result {
             Ok((new_input, op)) => {
-                let (newer_input, factor2) = factor(new_input)?;               //// mudar de factor pra boolean_term (nome novo)
+                let (newer_input, factor2) = factor(new_input)?;             
 
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
@@ -207,7 +207,6 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-//// Modificar pra ficar como o Ok, Unwrap etc. try_unwrap(); em tese, ele irá no parser de expressions
 /*
 fn propagate_operator(input: &str) -> IResult<&str, Expression> {
     let expr = Expression::CNothing; // Will be substituted on other parsing functions
@@ -320,7 +319,7 @@ fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
 
 // Parse boolean operations
 fn boolean_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, first) = boolean_term(input)?;                                 //// Alterar parser: usar o term normal
+    let (input, first) = boolean_term(input)?;                                
     let (input, rest) = many0(tuple((
         delimited(space0, alt((tag("and"), tag("or"))), space0),
         boolean_term,
@@ -336,18 +335,16 @@ fn boolean_expression(input: &str) -> IResult<&str, Expression> {
     ))
 }
 
-//// Mudar nome disso daqui pra chamar no term
 fn boolean_term(input: &str) -> IResult<&str, Expression> {
     let (input, exp) = alt((
-        map(preceded(tag("not "), boolean_factor), |expr| {            //// chamar factor
+        map(preceded(tag("not "), boolean_factor), |expr| {           
             Expression::Not(Box::new(expr))
         }),
-        boolean_factor,                                                 //// chamar factor
+        boolean_factor,                         
     ))(input)?;
     return Ok((input, exp));
 }
 
-//// Tirar esse cara
 fn boolean_factor(input: &str) -> IResult<&str, Expression> {
     alt((
         boolean,
@@ -367,9 +364,6 @@ fn factor(input: &str) -> IResult<&str, Expression> {
             arithmetic_expression,
             tuple((space0, char(')'))),
         ),
-        //// boolean
-        //// comparison_expression
-        //// Delimited boolean_expression
         ok_expression,
         err_expression,
         just_expression,
@@ -388,7 +382,6 @@ fn factor(input: &str) -> IResult<&str, Expression> {
 }
 
 //indented block parser
-//// Se quiser tentar melhorar isso daki, pq nn ta funcionando if dentro de if. Sera q pode ser isso?
 fn indented_block(input: &str) -> IResult<&str, Vec<Statement>> {
     let (input, _) = line_ending(input)?;
     let (input, statements) = separated_list1(
