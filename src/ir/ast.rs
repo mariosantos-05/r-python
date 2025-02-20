@@ -14,11 +14,11 @@ impl<A> Frame<A> {
     pub fn new(func: Option<Function>, key: Option<(Name, i32)>) -> Frame<A> {
         let variables: HashMap<Name, A> = HashMap::new();
 
-        Frame {
+        return Frame {
             parent_function: func,
             parent_key: key,
             variables,
-        }
+        };
     }
 }
 
@@ -34,38 +34,39 @@ impl<A> Environment<A> {
         let frame: Frame<A> = Frame::new(None, None);
         let scope = Function::new();
 
-        Environment {
+        return Environment {
             scope,
             recursion: 0,
             stack: HashMap::from([(("__main__".to_string(), 0), frame)]),
-        }
+        };
     }
 
     pub fn scope_key(&self) -> (Name, i32) {
-        (self.scope_name(), self.recursion)
+        return (self.scope_name(), self.recursion);
     }
 
     pub fn scope_name(&self) -> Name {
-        self.scope.name.clone()
+        return self.scope.name.clone();
     }
 
     pub fn scope_return(&self) -> Option<&A> {
-        self.search_frame(self.scope_name())
+        return self.search_frame(self.scope_name());
     }
 
     pub fn get_frame(&self, key: (Name, i32)) -> &Frame<A> {
-        self.stack.get(&key).unwrap()
+        return self.stack.get(&key).unwrap();
     }
 
     pub fn search_frame(&self, name: Name) -> Option<&A> {
-        self.stack
+        return self
+            .stack
             .get(&self.scope_key())
             .unwrap()
             .variables
-            .get(&name)
+            .get(&name);
     }
 
-    pub fn insert_frame(&mut self, func: Function) {
+    pub fn insert_frame(&mut self, func: Function) -> () {
         let new_frame: Frame<A> = Frame::new(Some(self.scope.clone()), Some(self.scope_key()));
 
         self.stack
@@ -74,7 +75,7 @@ impl<A> Environment<A> {
         self.recursion += 1;
     }
 
-    pub fn remove_frame(&mut self) {
+    pub fn remove_frame(&mut self) -> () {
         let recursion = self.scope_key().1 - 1;
         self.scope = self
             .stack
@@ -85,7 +86,7 @@ impl<A> Environment<A> {
         self.recursion = recursion;
     }
 
-    pub fn insert_variable(&mut self, name: Name, kind: A) {
+    pub fn insert_variable(&mut self, name: Name, kind: A) -> () {
         if let Some(frame) = self.stack.get_mut(&self.scope_key()) {
             frame.variables.insert(name, kind);
         }
@@ -102,12 +103,12 @@ pub struct Function {
 
 impl Function {
     pub fn new() -> Function {
-        Function {
+        return Function {
             name: "__main__".to_string(),
             kind: None,
             params: None,
             body: None,
-        }
+        };
     }
 }
 
@@ -120,6 +121,9 @@ pub enum Type {
     TFunction(Box<Option<Type>>, Vec<Type>),
     TList(Box<Type>),
     TTuple(Vec<Type>),
+    TMaybe(Box<Type>),
+    TResult(Box<Type>, Box<Type>), // Ok, Error
+    TAny,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -154,6 +158,18 @@ pub enum Expression {
     LT(Box<Expression>, Box<Expression>),
     GTE(Box<Expression>, Box<Expression>),
     LTE(Box<Expression>, Box<Expression>),
+
+    /* error expressions */
+    COk(Box<Expression>),
+    CErr(Box<Expression>),
+
+    CJust(Box<Expression>),
+    CNothing,
+
+    Unwrap(Box<Expression>),
+    IsError(Box<Expression>),
+    IsNothing(Box<Expression>),
+    Propagate(Box<Expression>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
