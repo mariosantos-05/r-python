@@ -1,5 +1,5 @@
-use crate::ir::ast::{EnvValue, Environment, Expression, Function, Name, Statement};
-use crate::tc::type_checker::{check_stmt, ControlType};
+use crate::ir::ast::{Environment, Expression, Function, Name, Statement, Type}; // Fixed imports
+use crate::tc::type_checker::check_stmt;
 use crate::HashMap;
 
 type ErrorMessage = String;
@@ -38,7 +38,10 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
 }
 
 // Helper function for executing blocks
-fn execute_block(stmts: Vec<Statement>, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
+fn execute_block(
+    stmts: Vec<Statement>,
+    env: &Environment<EnvValue>,
+) -> Result<ControlFlow, ErrorMessage> {
     let mut current_env = env.clone();
 
     for stmt in stmts {
@@ -51,16 +54,13 @@ fn execute_block(stmts: Vec<Statement>, env: &Environment<EnvValue>) -> Result<C
     Ok(ControlFlow::Continue(current_env))
 }
 
-pub fn execute(
-    stmt: Statement,
-    env: &Environment<EnvValue>,
-) -> Result<ControlFlow, ErrorMessage> {
+pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
 
     match stmt {
         Statement::Assignment(name, exp, _) => {
             let value = eval(*exp, &new_env)?;
-            new_env.insert(name, (Some(value), Type::TInteger)); // Temporário até implementar tipagem
+            new_env.insert_variable(name, value); // Remove the tuple
             Ok(ControlFlow::Continue(new_env))
         }
         Statement::IfThenElse(cond, then_stmt, else_stmt) => {
@@ -85,15 +85,13 @@ pub fn execute(
             let mut value = eval(*cond.clone(), &new_env)?;
             loop {
                 match value {
-                    EnvValue::Exp(Expression::CTrue) => {
-                        match execute(*stmt.clone(), &new_env)? {
-                            ControlFlow::Continue(control_env) => {
-                                new_env = control_env;
-                                value = eval(*cond.clone(), &new_env)?;
-                            }
-                            ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                    EnvValue::Exp(Expression::CTrue) => match execute(*stmt.clone(), &new_env)? {
+                        ControlFlow::Continue(control_env) => {
+                            new_env = control_env;
+                            value = eval(*cond.clone(), &new_env)?;
                         }
-                    }
+                        ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                    },
                     EnvValue::Exp(Expression::CFalse) => return Ok(ControlFlow::Continue(new_env)),
                     _ => unreachable!(),
                 }
@@ -106,11 +104,8 @@ pub fn execute(
             }
             ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
         },
-        Statement::FuncDef(name, func) => {
-            new_env.insert(
-                name.clone(),
-                (Some(EnvValue::Func(func.clone())), func.kind.clone()),
-            );
+        Statement::FuncDef(func) => {
+            new_env.insert_variable(func.name.clone(), EnvValue::Func(func.clone()));
             Ok(ControlFlow::Continue(new_env))
         }
         Statement::Return(exp) => {
@@ -121,15 +116,28 @@ pub fn execute(
     }
 }
 
-fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Result<EnvValue, ErrorMessage> {
-    match env.get(&name) {
-        Some((Some(EnvValue::Func(func)), _)) => {
+fn call(
+    name: Name,
+    args: Vec<Expression>,
+    env: &Environment<EnvValue>,
+) -> Result<EnvValue, ErrorMessage> {
+    // Use search_frame instead of get
+    match env.search_frame(name.clone()) {
+        Some(EnvValue::Func(func)) => {
             let mut new_env = Environment::new();
 
             // Copy global functions
-            for (key, (value, _)) in env.iter() {
-                if let Some(EnvValue::Func(_)) = value {
-                    new_env.insert(key.clone(), (value.clone(), Type::TFunction));
+            let mut curr_scope = env.scope_key();
+            loop {
+                let frame = env.get_frame(curr_scope.clone());
+                for (name, value) in &frame.variables {
+                    if let EnvValue::Func(_) = value {
+                        new_env.insert_variable(name.clone(), value.clone());
+                    }
+                }
+                match &frame.parent_key {
+                    Some(parent) => curr_scope = parent.clone(),
+                    None => break,
                 }
             }
 
@@ -137,12 +145,12 @@ fn call(name: Name, args: Vec<Expression>, env: &Environment<EnvValue>) -> Resul
             if let Some(params) = &func.params {
                 for (param, arg) in params.iter().zip(args) {
                     let arg_value = eval(arg, env)?;
-                    new_env.insert(param.0.clone(), (Some(arg_value), param.1.clone()));
+                    new_env.insert_variable(param.0.clone(), arg_value);
                 }
             }
 
             // Execute function
-            match execute(*func.body.clone(), &new_env)? {
+            match execute(*func.body.as_ref().unwrap().clone(), &new_env)? {
                 ControlFlow::Return(value) => Ok(value),
                 ControlFlow::Continue(_) => Err("Function did not return a value".to_string()),
             }

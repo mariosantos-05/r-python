@@ -346,19 +346,17 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
 
     Ok((
         input,
-        Statement::FuncDef(
-            name,
-            Function {
-                kind: parse_type(&return_type),
-                params: Some(
-                    params
-                        .into_iter()
-                        .map(|(name, type_name)| (name, parse_type(&type_name)))
-                        .collect(),
-                ),
-                body: Box::new(Statement::Block(body)),
-            },
-        ),
+        Statement::FuncDef(Function {
+            name: name.clone(),                   // Provide the name field
+            kind: Some(parse_type(&return_type)), // Wrap in Some
+            params: Some(
+                params
+                    .into_iter()
+                    .map(|(name, type_name)| (name, parse_type(&type_name)))
+                    .collect(),
+            ),
+            body: Some(Box::new(Statement::Block(body))), // Wrap in Some
+        }),
     ))
 }
 
@@ -652,10 +650,10 @@ mod tests {
         let (rest, stmt) = function_def(input).unwrap();
         assert_eq!(rest, "");
         match stmt {
-            Statement::FuncDef(name, func) => {
-                assert_eq!(name, "add");
-                assert_eq!(func.kind, Type::TInteger);
-                match func.params {
+            Statement::FuncDef(func) => {
+                assert_eq!(func.name, "add");
+                assert_eq!(func.kind, Some(Type::TInteger));
+                match &func.params {
                     Some(params) => {
                         assert_eq!(params.len(), 2);
                         assert_eq!(params[0].0, "x");
