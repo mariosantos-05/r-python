@@ -1,8 +1,9 @@
 pub type Name = String;
 
+use nom::IResult;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Frame<A> {
     pub parent_function: Option<Function>,
     pub parent_key: Option<(Name, i32)>,
@@ -21,7 +22,7 @@ impl<A> Frame<A> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Environment<A> {
     pub scope: Function,
     pub recursion: i32,
@@ -123,7 +124,7 @@ impl Function {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,
@@ -133,6 +134,9 @@ pub enum Type {
     TList(Box<Type>),
     TTuple(Vec<Type>),
     Tadt(Name, Vec<ValueConstructor>),
+    TMaybe(Box<Type>),
+    TResult(Box<Type>, Box<Type>), // Ok, Error
+    TAny,
 }
 
 #[derive(Debug,PartialEq, Clone)]
@@ -174,8 +178,22 @@ pub enum Expression {
     GTE(Box<Expression>, Box<Expression>),
     LTE(Box<Expression>, Box<Expression>),
 
+
      /* ADT Constructor */
     ADTConstructor(Name, Name, Vec<Box<Expression>>),
+
+    /* error expressions */
+    COk(Box<Expression>),
+    CErr(Box<Expression>),
+
+    CJust(Box<Expression>),
+    CNothing,
+
+    Unwrap(Box<Expression>),
+    IsError(Box<Expression>),
+    IsNothing(Box<Expression>),
+    Propagate(Box<Expression>),
+
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -185,10 +203,28 @@ pub enum Statement {
     Assignment(Name, Box<Expression>, Option<Type>),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
+    Block(Vec<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Function),
     Return(Box<Expression>),
     ADTDeclaration(Name, Vec<ValueConstructor>),
     Match(Box<Expression>, Vec<(Expression, Box<Statement>)>),
 
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    IndentationError(usize),
+    UnexpectedToken(String),
+    InvalidExpression(String),
+}
+
+pub fn with_error_context<'a, T>(
+    parser: impl Fn(&'a str) -> IResult<&'a str, T>,
+    _context: &'a str,
+) -> impl Fn(&'a str) -> IResult<&'a str, T> {
+    move |input| {
+        parser(input)
+            .map_err(|_| nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
+    }
 }
