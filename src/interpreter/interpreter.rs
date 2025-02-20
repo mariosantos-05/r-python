@@ -1886,5 +1886,93 @@ mod tests {
             _ => assert!(false, "The program was suposed to terminate"),
         }
     }
+    
+    #[test]
+    fn test_recursive_propagate_equal() {
+        let env: Environment<EnvValue> = Environment::new();
+
+        let equal_expr = Propagate(Box::new(Expression::CJust(Box::new(Expression::EQ(Box::new(Expression::CInt(5)), Box::new(Expression::CInt(5)))))));
+        let unwrap_expr = Expression::Unwrap(Box::new(Expression::COk(Box::new(equal_expr))));
+
+        let result = eval(unwrap_expr, &env);
+        assert_eq!(result, Ok(EnvValue::Exp(Expression::CTrue)));
+    }
+
+    #[test]
+    fn test_recursive_propagate_boolean(){
+        let env:Environment<EnvValue> = Environment::new();
+        
+        let just_expr = Expression::Propagate(Box::new(Expression::CJust(Box::new(Expression::CTrue))));
+        let and_expr = Expression::And(Box::new(Expression::CTrue), Box::new(just_expr));
+        let unwrap_expr = Expression::Unwrap(Box::new(Expression::COk(Box::new(and_expr))));
+        
+        let result = eval(unwrap_expr, &env);
+        assert_eq!(result, Ok(EnvValue::Exp(Expression::CTrue)));
+    }
+     
+    #[test]
+    fn test_recursive_propagate_int(){
+        let env:Environment<EnvValue> = Environment::new();
+        
+        let inner_propagate = Expression::Unwrap(Box::new(Expression::COk(Box::new(Expression::CInt(1)))));
+        let add_expr = Expression::Add(Box::new(Expression::CInt(2)), Box::new(inner_propagate));
+        let outer_expr = Expression::Propagate(Box::new(Expression::COk(Box::new(add_expr))));
+        
+        let result = eval(outer_expr, &env);
+        assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(3))));
+    }
+
+    #[test]
+    fn test_recursive_unwrap(){
+        let env: Environment<EnvValue> = Environment::new();
+        
+        let base_expr = Expression::COk(Box::new(Expression::CInt(1)));
+        let propagate_1 = Expression::Unwrap(Box::new(Expression::COk(Box::new(base_expr))));
+        let propagate_2 = Expression::Unwrap(Box::new(Expression::COk(Box::new(propagate_1))));
+        
+        let result = eval_propagate_expression(propagate_2, &env);
+        assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(1))));
+    }
+
+    #[test]
+    fn test_recursive_propagation() {
+        let env: Environment<EnvValue> = Environment::new();
+
+        let base_expr = Expression::COk(Box::new(Expression::CInt(1)));
+        let propagate_1 = Expression::Propagate(Box::new(Expression::COk(Box::new(COk(Box::new(base_expr))))));
+        let propagate_2 = Expression::Propagate(Box::new(Expression::Propagate(Box::new(propagate_1))));
+        
+        let result = eval(propagate_2, &env);
+        assert_eq!(result, Ok(EnvValue::Exp(Expression::CInt(1))));
+
+    }
+
+    #[test]
+    fn test_propagate_err() {
+        let env: Environment<EnvValue> = Environment::new();
+        let exp = CErr(Box::new(CString("error".to_string())));
+
+        let result = eval_propagate_expression(exp, &env);
+        assert_eq!(result, Err(("Propagate".to_string(), Some(Expression::CString("error".to_string())))));
+        }
+
+    #[test]
+    fn test_propagate_nothing() {
+        let env: Environment<EnvValue> = Environment::new();
+        let exp = Expression::CNothing;
+
+        let result = eval_propagate_expression(exp, &env);
+        assert_eq!(result, Err(("Propagate".to_string(), Some(Expression::CString("Couldn't unwrap Nothing".to_string()))))
+        );
+    }
+
+    #[test]
+    fn test_propagate_unexpected() {
+        let env: Environment<EnvValue> = Environment::new();
+        let exp = Expression::CInt(100);
+
+        let result = eval_propagate_expression(exp, &env);
+        assert_eq!(result, Err((String::from("'propagate' is expects a Just or Ok."), None)));
+    }
 }
 
