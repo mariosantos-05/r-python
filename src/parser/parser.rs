@@ -1307,7 +1307,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_function_with_keyword_Ok() {
+    fn test_create_function_with_keyword_ok() {
         let input = "def Ok(x: TInteger) -> TInteger:\n    return x";
         let result = function_def(input);
     
@@ -1317,7 +1317,7 @@ mod tests {
     }
 
     #[test]
-    fn test_declaration_with_keyword_if() {
+    fn test_var_declaration_with_keyword_if() {
         let input = "if = 10";
         let result = assignment(input);
     
@@ -1327,7 +1327,7 @@ mod tests {
     }
 
     #[test]
-    fn test_declaration_with_keyword_while() {
+    fn test_var_declaration_with_keyword_while() {
         let input = "while = 10";
         let result = assignment(input);
     
@@ -1337,7 +1337,7 @@ mod tests {
     }
 
     #[test]
-    fn test_declaration_with_keyword_Ok() {
+    fn test_var_declaration_with_keyword_ok() {
         let input = "Ok = 10";
         let result = assignment(input);
     
