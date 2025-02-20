@@ -1,5 +1,6 @@
 pub type Name = String;
 
+use nom::IResult;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -13,11 +14,11 @@ impl<A> Frame<A> {
     pub fn new(func: Option<Function>, key: Option<(Name, i32)>) -> Frame<A> {
         let variables: HashMap<Name, A> = HashMap::new();
 
-        return Frame {
+        Frame {
             parent_function: func,
             parent_key: key,
             variables,
-        };
+        }
     }
 }
 
@@ -34,40 +35,41 @@ impl<A> Environment<A> {
         let frame: Frame<A> = Frame::new(None, None);
         let scope = Function::new();
 
-        return Environment {
+        Environment {
             scope,
             recursion: 0,
             stack: HashMap::from([(("__main__".to_string(), 0), frame)]),
             type_env: HashMap::new(),
-        };
+
+        }
+
     }
 
     pub fn scope_key(&self) -> (Name, i32) {
-        return (self.scope_name(), self.recursion);
+        (self.scope_name(), self.recursion)
     }
 
     pub fn scope_name(&self) -> Name {
-        return self.scope.name.clone();
+        self.scope.name.clone()
     }
 
     pub fn scope_return(&self) -> Option<&A> {
-        return self.search_frame(self.scope_name());
+        self.search_frame(self.scope_name())
     }
 
     pub fn get_frame(&self, key: (Name, i32)) -> &Frame<A> {
-        return self.stack.get(&key).unwrap();
+        self.stack.get(&key).unwrap()
     }
 
     pub fn search_frame(&self, name: Name) -> Option<&A> {
-        return self
-            .stack
+        self.stack
             .get(&self.scope_key())
             .unwrap()
             .variables
-            .get(&name);
+            .get(&name)
     }
 
-    pub fn insert_frame(&mut self, func: Function) -> () {
+    pub fn insert_frame(&mut self, func: Function) {
         let new_frame: Frame<A> = Frame::new(Some(self.scope.clone()), Some(self.scope_key()));
 
         self.stack
@@ -76,7 +78,7 @@ impl<A> Environment<A> {
         self.recursion += 1;
     }
 
-    pub fn remove_frame(&mut self) -> () {
+    pub fn remove_frame(&mut self) {
         let recursion = self.scope_key().1 - 1;
         self.scope = self
             .stack
@@ -87,7 +89,7 @@ impl<A> Environment<A> {
         self.recursion = recursion;
     }
 
-    pub fn insert_variable(&mut self, name: Name, kind: A) -> () {
+    pub fn insert_variable(&mut self, name: Name, kind: A) {
         if let Some(frame) = self.stack.get_mut(&self.scope_key()) {
             frame.variables.insert(name, kind);
         }
@@ -114,16 +116,16 @@ pub struct Function {
 
 impl Function {
     pub fn new() -> Function {
-        return Function {
+        Function {
             name: "__main__".to_string(),
             kind: None,
             params: None,
             body: None,
-        };
+        }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     TInteger,
     TBool,
@@ -185,10 +187,28 @@ pub enum Statement {
     Assignment(Name, Box<Expression>, Option<Type>),
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
+    Block(Vec<Statement>),
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Function),
     Return(Box<Expression>),
     ADTDeclaration(Name, Vec<ValueConstructor>),
     Match(Box<Expression>, Vec<(Expression, Box<Statement>)>),
 
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    IndentationError(usize),
+    UnexpectedToken(String),
+    InvalidExpression(String),
+}
+
+pub fn with_error_context<'a, T>(
+    parser: impl Fn(&'a str) -> IResult<&'a str, T>,
+    _context: &'a str,
+) -> impl Fn(&'a str) -> IResult<&'a str, T> {
+    move |input| {
+        parser(input)
+            .map_err(|_| nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
+    }
 }
