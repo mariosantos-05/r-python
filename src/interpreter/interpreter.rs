@@ -41,14 +41,12 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
     }
 }
 
-
 pub fn run(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, String> {
     match execute(stmt, env) {
         Ok(e) => Ok(e),
         Err((s, _)) => Err(s),
     }
 }
-
 
 fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
