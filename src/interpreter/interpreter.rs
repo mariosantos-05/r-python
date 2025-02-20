@@ -152,31 +152,44 @@ fn call(
     args: Vec<Expression>,
     env: &Environment<EnvValue>,
 ) -> Result<EnvValue, ErrorMessage> {
-    let mut new_env = env.clone();
+    // Use search_frame instead of get
+    match env.search_frame(name.clone()) {
+        Some(EnvValue::Func(func)) => {
+            let mut new_env = Environment::new();
 
-    if let Ok(EnvValue::Func(func)) = lookup(name, &new_env) {
-        new_env.insert_frame(func.clone());
+            // Copy global functions
+            let mut curr_scope = env.scope_key();
+            loop {
+                let frame = env.get_frame(curr_scope.clone());
+                for (name, value) in &frame.variables {
+                    if let EnvValue::Func(_) = value {
+                        new_env.insert_variable(name.clone(), value.clone());
+                    }
+                }
+                match &frame.parent_key {
+                    Some(parent) => curr_scope = parent.clone(),
+                    None => break,
+                }
+            }
 
-        if let Some(params) = func.params.clone() {
-            for (arg, (param, _)) in args.iter().zip(params) {
-                let value = eval(arg.clone(), &new_env)?;
-                new_env.insert_variable(param, value);
+            // Bind arguments
+            if let Some(params) = &func.params {
+                for (param, arg) in params.iter().zip(args) {
+                    let arg_value = eval(arg, env)?;
+                    new_env.insert_variable(param.0.clone(), arg_value);
+                }
+            }
+
+            // Execute function
+            match execute(*func.body.as_ref().unwrap().clone(), &new_env)? {
+                ControlFlow::Return(value) => Ok(value),
+                ControlFlow::Continue(_) => {
+                    Err(("Function did not return a value".to_string(), None))
+                }
             }
         }
-
-        if let None = new_env.search_frame(func.name.clone()) {
-            new_env.insert_variable(func.name.clone(), EnvValue::Func(func.clone()));
-        }
-
-        match execute(*func.body.unwrap(), &new_env)? {
-            ControlFlow::Return(value) => {
-                new_env.remove_frame();
-                return Ok(value);
-            }
-            ControlFlow::Continue(_) => unreachable!(),
-        }
+        _ => Err((format!("Function {} not found", name), None)),
     }
-    unreachable!()
 }
 
 /* Error propagation functions:

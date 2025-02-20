@@ -3,7 +3,7 @@ pub type Name = String;
 use nom::IResult;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Frame<A> {
     pub parent_function: Option<Function>,
     pub parent_key: Option<(Name, i32)>,
@@ -22,7 +22,7 @@ impl<A> Frame<A> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Environment<A> {
     pub scope: Function,
     pub recursion: i32,

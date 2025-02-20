@@ -223,18 +223,6 @@ fn string(input: &str) -> IResult<&str, Expression> {
     )(input)
 }
 
-fn tryunwrap_expression(input: &str) -> IResult<&str, Expression> {
-    let (input, _) = tag("tryUnwrap")(input)?;
-    let (input, _) = space0(input)?;
-    let (input, expr) = delimited(
-        tuple((char('('), space0)),
-        expression,
-        tuple((space0, char(')'))),
-    )(input)?;
-
-    Ok((input, Expression::Propagate(Box::new(expr))))
-}
-
 fn ok_expression(input: &str) -> IResult<&str, Expression> {
     let (input, _) = tag("Ok")(input)?;
     let (input, _) = space0(input)?;
@@ -311,6 +299,18 @@ fn unwrap_expression(input: &str) -> IResult<&str, Expression> {
     Ok((input, Expression::Unwrap(Box::new(expr))))
 }
 
+fn tryunwrap_expression(input: &str) -> IResult<&str, Expression> {
+    let (input, _) = tag("tryUnwrap")(input)?;
+    let (input, _) = space0(input)?;
+    let (input, expr) = delimited(
+        tuple((char('('), space0)),
+        expression,
+        tuple((space0, char(')'))),
+    )(input)?;
+
+    Ok((input, Expression::Propagate(Box::new(expr))))
+}
+
 // Parse boolean operations
 fn boolean_expression(input: &str) -> IResult<&str, Expression> {
     let (input, first) = boolean_term(input)?;
@@ -334,10 +334,6 @@ fn boolean_term(input: &str) -> IResult<&str, Expression> {
         map(preceded(tag("not "), boolean_factor), |expr| {
             Expression::Not(Box::new(expr))
         }),
-        unwrap_expression,
-        tryunwrap_expression,
-        iserror_expression,
-        isnothing_expression,
         boolean_factor,
     ))(input)
 }
@@ -346,6 +342,10 @@ fn boolean_factor(input: &str) -> IResult<&str, Expression> {
     alt((
         boolean,
         comparison_expression,
+        unwrap_expression,
+        tryunwrap_expression,
+        iserror_expression,
+        isnothing_expression,
         delimited(
             tuple((char('('), space0)),
             boolean_expression,
@@ -361,6 +361,7 @@ fn factor(input: &str) -> IResult<&str, Expression> {
             arithmetic_expression,
             tuple((space0, char(')'))),
         ),
+        function_call,
         ok_expression,
         err_expression,
         just_expression,
@@ -369,7 +370,6 @@ fn factor(input: &str) -> IResult<&str, Expression> {
         tryunwrap_expression,
         iserror_expression,
         isnothing_expression,
-        function_call,
         real,
         integer,
         map(tuple((char('-'), space0, factor)), |(_, _, expr)| {
@@ -468,7 +468,7 @@ fn parse_type(type_name: &str) -> Type {
 fn function_def(input: &str) -> IResult<&str, Statement> {
     let (input, _) = tag("def")(input)?;
     let (input, _) = space1(input)?;
-    let (input, id) = identifier(input)?;
+    let (input, name) = identifier(input)?;
     let (input, _) = char('(')(input)?;
     let (input, params) = separated_list0(
         delimited(space0, char(','), space0),
@@ -488,15 +488,15 @@ fn function_def(input: &str) -> IResult<&str, Statement> {
     Ok((
         input,
         Statement::FuncDef(Function {
-            name: id,
-            kind: Some(parse_type(&return_type)),
+            name: name.clone(),                   // Provide the name field
+            kind: Some(parse_type(&return_type)), // Wrap in Some
             params: Some(
                 params
                     .into_iter()
                     .map(|(name, type_name)| (name, parse_type(&type_name)))
                     .collect(),
             ),
-            body: Some(Box::new(Statement::Block(body))),
+            body: Some(Box::new(Statement::Block(body))), // Wrap in Some
         }),
     ))
 }
