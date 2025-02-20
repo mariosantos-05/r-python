@@ -27,6 +27,7 @@ pub fn check_exp(exp: Expression, env: &Environment<Type>) -> Result<Type, Error
         Expression::GTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::LTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::Var(name) => check_var_name(name, env, false),
+
         Expression::COk(e) => check_result_ok(*e, env),
         Expression::CErr(e) => check_result_err(*e, env),
         Expression::CJust(e) => check_maybe_just(*e, env),
@@ -37,6 +38,7 @@ pub fn check_exp(exp: Expression, env: &Environment<Type>) -> Result<Type, Error
         Expression::Propagate(e) => check_propagate_type(*e, env),
         Expression::FuncCall(name, args) => check_func_call(name, args, env),
         //_ => Err(String::from("not implemented yet")),
+
     }
 }
 

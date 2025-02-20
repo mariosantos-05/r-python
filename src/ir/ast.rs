@@ -67,6 +67,7 @@ impl<A> Environment<A> {
     }
 
     pub fn insert_frame(&mut self, func: Function) -> () {
+
         let new_frame: Frame<A> = Frame::new(Some(self.scope.clone()), Some(self.scope_key()));
 
         self.stack
@@ -76,6 +77,7 @@ impl<A> Environment<A> {
     }
 
     pub fn remove_frame(&mut self) -> () {
+
         let recursion = self.scope_key().1 - 1;
         self.scope = self
             .stack
@@ -86,7 +88,9 @@ impl<A> Environment<A> {
         self.recursion = recursion;
     }
 
+
     pub fn insert_variable(&mut self, name: Name, kind: A) -> () {
+
         if let Some(frame) = self.stack.get_mut(&self.scope_key()) {
             frame.variables.insert(name, kind);
         }
@@ -183,6 +187,23 @@ pub enum Statement {
     Sequence(Box<Statement>, Box<Statement>),
     FuncDef(Function),
     Return(Box<Expression>),
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    IndentationError(usize),
+    UnexpectedToken(String),
+    InvalidExpression(String),
+}
+
+pub fn with_error_context<'a, T>(
+    parser: impl Fn(&'a str) -> IResult<&'a str, T>,
+    _context: &'a str,
+) -> impl Fn(&'a str) -> IResult<&'a str, T> {
+    move |input| {
+        parser(input)
+            .map_err(|_| nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
+    }
 }
 
 #[derive(Debug)]

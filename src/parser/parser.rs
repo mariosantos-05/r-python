@@ -10,6 +10,7 @@ use nom::{
 };
 
 type ParseResult<'a, T> = IResult<&'a str, T, Error<&'a str>>;
+
 const KEYWORDS: &[&str] = &[
     "if",
     "else",
@@ -37,6 +38,7 @@ use crate::ir::ast::Function;
 use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 
+
 fn identifier(input: &str) -> IResult<&str, Name> {
     let (input, id) = take_while1(|c: char| c.is_alphanumeric() || c == '_')(input)?;
 
@@ -47,8 +49,7 @@ fn identifier(input: &str) -> IResult<&str, Name> {
         }));
     }
 
-    Ok((input, id.to_string()))
-}
+
 
 // Parse integer literals
 fn integer(input: &str) -> IResult<&str, Expression> {
@@ -80,7 +81,6 @@ fn term(input: &str) -> ParseResult<Expression> {
         match op_result {
             Ok((new_input, op)) => {
                 let (newer_input, factor2) = factor(new_input)?;
-
                 expr = match op {
                     "*" => Expression::Mul(Box::new(expr), Box::new(factor2)),
                     "/" => Expression::Div(Box::new(expr), Box::new(factor2)),
@@ -400,7 +400,6 @@ fn if_statement(input: &str) -> IResult<&str, Statement> {
         boolean_expression,
         map(identifier, Expression::Var),
     ))(input)?;
-
     let (input, _) = space0(input)?;
     let (input, _) = char(':')(input)?;
     let (input, then_block) = indented_block(input)?;
@@ -812,6 +811,7 @@ mod tests {
                         ))
                     )])))
                 );
+
             }
             _ => panic!("Expected FuncDef"),
         }
