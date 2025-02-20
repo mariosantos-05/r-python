@@ -1,6 +1,6 @@
-use crate::ir::ast::{EnvValue, Environment, Expression, Function, Name, Statement};
-use crate::tc::type_checker::{check_stmt, ControlType};
-use crate::HashMap;
+use crate::ir::ast::{Environment, Expression, Function, Name, Statement};
+
+type ErrorMessage = (String, Option<Expression>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvValue {
@@ -8,13 +8,6 @@ pub enum EnvValue {
     Func(Function),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum EnvValue {
-    Exp(Expression),
-    Func(Function),
-}
-
-#[derive(Debug)]
 pub enum ControlFlow {
     Continue(Environment<EnvValue>),
     Return(EnvValue),
@@ -639,6 +632,8 @@ mod tests {
     use crate::ir::ast::Expression::*;
     use crate::ir::ast::Function;
     use crate::ir::ast::Statement::*;
+    //use crate::ir::ast::Type;
+    use crate::ir::ast::Type::*;
     use approx::relative_eq;
 
     #[test]
@@ -756,6 +751,8 @@ mod tests {
         let u = IsNothing(Box::new(c420));
 
         assert_eq!(eval(u, &env), Ok(EnvValue::Exp(CFalse)));
+
+        //assert_eq!(eval(u, &env), Err("Expression not recognized.".to_string()));
     }
 
     #[test]
@@ -950,7 +947,6 @@ mod tests {
                 Some(&EnvValue::Exp(CInt(42)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
-
             Err(s) => assert!(false, "{:?}", s),
         }
     }
@@ -1010,9 +1006,7 @@ mod tests {
                 );
             }
             Ok(ControlFlow::Return(_)) => assert!(false),
-
             Err(s) => assert!(false, "{:?}", s),
-
         }
     }
 
@@ -1051,9 +1045,7 @@ mod tests {
                 Some(&EnvValue::Exp(CInt(1)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
-
             Err(s) => assert!(false, "{:?}", s),
-
         }
     }
 
@@ -1109,9 +1101,7 @@ mod tests {
                 Some(&EnvValue::Exp(CInt(2)))
             ),
             Ok(ControlFlow::Return(_)) => assert!(false),
-
             Err(s) => assert!(false, "{:?}", s),
-
         }
     }
 
@@ -1262,9 +1252,7 @@ mod tests {
         /*
          * Test for a recursive function
          *
-         * > def 
-         
-         nacci(n: TInteger) -> TInteger:
+         * > def fibonacci(n: TInteger) -> TInteger:
          * >    if n < 1:
          * >        return 0
          * >

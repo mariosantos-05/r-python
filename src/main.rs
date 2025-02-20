@@ -2,18 +2,23 @@
 //use crate::ir::ast::Statement;
 //use crate::interpreter::interpreter::eval;
 
+/*
 use crate::interpreter::interpreter::{execute, ControlFlow};
 use crate::ir::ast::{Statement, Type};
 use crate::parser::parser::parse;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
+use std::io::Write;*/
 
 pub mod interpreter;
 pub mod ir;
 pub mod parser;
 pub mod tc;
 
+fn main() {
+    println!("Hello, world!");
+}
+/*
 fn run_test(name: &str, program: &str) -> String {
     let mut output = String::new();
     output.push_str(&format!("\n=== Running test: {} ===\n", name));
@@ -41,7 +46,7 @@ fn run_test(name: &str, program: &str) -> String {
                             current_env.insert(name.clone(), (None, Type::TInteger));
                         }
                     }
-                    Statement::FuncDef(name, func) => {
+                    Statement::FuncDef(func) => {
                         if !current_env.contains_key(name) {
                             current_env.insert(name.clone(), (None, func.kind.clone()));
                         }
@@ -670,4 +675,4 @@ result4 = (x >= y) and (not False)"#;
     // Also print to console
     print!("{}", all_results);
 }
- */
+ */ */

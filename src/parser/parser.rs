@@ -38,7 +38,6 @@ use crate::ir::ast::Function;
 use crate::ir::ast::Type;
 use crate::ir::ast::{Expression, Name, Statement};
 
-
 fn identifier(input: &str) -> IResult<&str, Name> {
     let (input, id) = take_while1(|c: char| c.is_alphanumeric() || c == '_')(input)?;
 
@@ -49,7 +48,8 @@ fn identifier(input: &str) -> IResult<&str, Name> {
         }));
     }
 
-
+    Ok((input, id.to_string()))
+}
 
 // Parse integer literals
 fn integer(input: &str) -> IResult<&str, Expression> {
@@ -811,7 +811,6 @@ mod tests {
                         ))
                     )])))
                 );
-
             }
             _ => panic!("Expected FuncDef"),
         }
