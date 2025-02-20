@@ -41,7 +41,14 @@ pub fn eval(exp: Expression, env: &Environment<EnvValue>) -> Result<EnvValue, Er
     }
 }
 
-pub fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
+pub fn run(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, String> {
+    match execute(stmt, env) {
+        Ok(e) => Ok(e),
+        Err((s, _)) => Err(s),
+    }
+}
+
+fn execute(stmt: Statement, env: &Environment<EnvValue>) -> Result<ControlFlow, ErrorMessage> {
     let mut new_env = env.clone();
 
     let result = match stmt {
@@ -941,7 +948,7 @@ mod tests {
 
         let assign_stmt = Assignment(String::from("x"), Box::new(CInt(42)), Some(TInteger));
 
-        match execute(assign_stmt, &env) {
+        match run(assign_stmt, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
                 new_env.search_frame("x".to_string()),
                 Some(&EnvValue::Exp(CInt(42)))
@@ -1039,7 +1046,7 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)), Some(TInteger));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
                 new_env.search_frame("y".to_string()),
                 Some(&EnvValue::Exp(CInt(1)))
@@ -1095,7 +1102,7 @@ mod tests {
         let first_assignment = Assignment(String::from("x"), Box::new(CInt(1)), Some(TInteger));
         let program = Sequence(Box::new(first_assignment), Box::new(setup_stmt));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
                 new_env.search_frame("y".to_string()),
                 Some(&EnvValue::Exp(CInt(2)))
@@ -1145,7 +1152,7 @@ mod tests {
     //         Box::new(Sequence(Box::new(a2), Box::new(while_statement))),
     //     );
 
-    //     match execute(&program, env) {
+    //     match run(&program, env) {
     //         Ok(new_env) => {
     //             assert_eq!(new_env.get("y"), Some(&7));
     //             assert_eq!(new_env.get("x"), Some(&0));
@@ -1194,7 +1201,7 @@ mod tests {
     //         Assignment(String::from("x")), Box:new(CInt(10)));
     //     let program = Sequence(Box::new(setup_stmt), Box::new(outer_if_statement));
 
-    //     match execute(&program, env) {
+    //     match run(&program, env) {
     //         Ok(new_env) => assert_eq!(new_env.get("y"), Some(&1)),
     //         Err(s) => assert!(false, "{}", s),
     //     }
@@ -1227,7 +1234,7 @@ mod tests {
 
         let program = Sequence(Box::new(a1), Box::new(Sequence(Box::new(a2), Box::new(a3))));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
                     new_env.search_frame("x".to_string()),
@@ -1310,7 +1317,7 @@ mod tests {
             )),
         );
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => assert_eq!(
                 new_env.search_frame("fib".to_string()),
                 Some(&EnvValue::Exp(CInt(34)))
@@ -1378,7 +1385,7 @@ mod tests {
             Box::new(Sequence(Box::new(if_stmt_first), Box::new(if_stmt_second))),
         );
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
                     new_env.search_frame("x".to_string()),
@@ -1424,13 +1431,10 @@ mod tests {
 
         let program = Sequence(Box::new(setup_stmt), Box::new(unwrap_stmt));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                (
-                    "Program terminated with errors: Test error message".to_string(),
-                    None
-                )
+                "Program terminated with errors: Test error message".to_string(),
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
@@ -1477,11 +1481,8 @@ mod tests {
 
         let program = Sequence(Box::new(setup_stmt), Box::new(if_stmt_1));
 
-        match execute(program, &env) {
-            Err(s) => assert_eq!(
-                s,
-                ("Program terminated with errors: Oops".to_string(), None)
-            ),
+        match run(program, &env) {
+            Err(s) => assert_eq!(s, "Program terminated with errors: Oops".to_string()),
             _ => assert!(false, "The program was suposed to terminate"),
         }
     }
@@ -1570,13 +1571,10 @@ mod tests {
         let seq1 = Sequence(Box::new(a1), Box::new(a2));
         let program = Sequence(Box::new(seq1), Box::new(seq2));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(_)) => assert!(false),
             Ok(ControlFlow::Return(_)) => assert!(false),
-            Err(s) => assert_eq!(
-                s,
-                ("Program terminated with errors: ErrorMsg".to_string(), None)
-            ),
+            Err(s) => assert_eq!(s, "Program terminated with errors: ErrorMsg".to_string()),
         }
     }
 
@@ -1665,7 +1663,7 @@ mod tests {
         let seq1 = Sequence(Box::new(a1), Box::new(a2));
         let program = Sequence(Box::new(seq1), Box::new(seq2));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
                     new_env.search_frame("x".to_string()),
@@ -1762,13 +1760,10 @@ mod tests {
             )),
         );
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                (
-                    "Program terminated with errors: Expected a positive number".to_string(),
-                    None
-                )
+                "Program terminated with errors: Expected a positive number".to_string(),
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
@@ -1815,7 +1810,7 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)), Some(TInteger));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Ok(ControlFlow::Continue(new_env)) => {
                 assert_eq!(
                     new_env.search_frame("x".to_string()),
@@ -1888,13 +1883,10 @@ mod tests {
         let setup_stmt = Assignment(String::from("x"), Box::new(CInt(10)), Some(TInteger));
         let program = Sequence(Box::new(setup_stmt), Box::new(if_statement));
 
-        match execute(program, &env) {
+        match run(program, &env) {
             Err(s) => assert_eq!(
                 s,
-                (
-                    "Program terminated with errors: Test Error Message".to_string(),
-                    None
-                )
+                "Program terminated with errors: Test Error Message".to_string(),
             ),
             _ => assert!(false, "The program was suposed to terminate"),
         }
